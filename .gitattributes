@@ -1,0 +1,16 @@
+# The repo history stores LF. Without this, editing on Windows rewrites every
+# file to CRLF and git reports every line of every file as changed.
+
+* text=auto eol=lf
+
+*.py    text eol=lf
+*.m     text eol=lf
+*.ipynb text eol=lf
+*.toml  text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+
+*.docx binary
+*.png  binary
+*.jpg  binary
+*.pdf  binary
