@@ -12,6 +12,7 @@ and call :func:`result_at` instead.
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -22,15 +23,31 @@ from scipy import stats as sps
 from maintkit.transforms import Identity, Transform
 
 # list of public symbols for ``from maintkit.inference import *``. The
-__all__ = ["FitResult", "fit_mle", "result_at", "hessian_at"]
+__all__ = [
+    "FitResult",
+    "ConvergenceWarning",
+    "fit_mle",
+    "result_at",
+    "hessian_at",
+]
+
+
+class ConvergenceWarning(RuntimeWarning):
+    """The optimiser did not report successful convergence.
+
+    Its own class so it can be filtered independently of other warnings::
+
+        warnings.filterwarnings("ignore", category=maintkit.ConvergenceWarning)
+        warnings.filterwarnings("error",  category=maintkit.ConvergenceWarning)
+    """
 
 
 @dataclass
 class FitResult:
     """Outcome of a maximum-likelihood fit.
 
-    Supports tuple unpacking as ``params, ci, cov`` for backwards compatibility
-    with the older fitters that returned a 3-tuple.
+    Every fitter in the package returns one of these, so ``ci`` is always
+    ``(n_params, 2)`` and the fields always mean the same thing.
     """
 
     params: np.ndarray
@@ -42,10 +59,6 @@ class FitResult:
     message: str = ""
     alpha: float = 0.05
     names: tuple | None = None
-
-    def __iter__(self):
-        """Backwards compatibility: ``p_hat, p_ci, p_cov = model.fit(...)``."""
-        yield from (self.params, self.ci, self.cov)
 
     @property
     def n_params(self):
@@ -94,14 +107,26 @@ def _build_result(y_hat, hessian, transform, *, alpha, nnlf_value,
     hessian = np.atleast_2d(np.asarray(hessian, dtype=float))
 
     p_hat = transform.inverse(y_hat)
-    cov = transform.covariance(y_hat, hessian)
+
+    if hessian.shape != (y_hat.size, y_hat.size):
+        raise ValueError(
+            f"hessian must be {(y_hat.size, y_hat.size)} for {y_hat.size} "
+            f"parameters, got {hessian.shape}"
+        )
+
+    # Invert once, here, rather than calling Transform.covariance: that routes
+    # the failure through _invert so a flat likelihood reports why, instead of
+    # numpy's bare "Singular matrix". It also avoids inverting the Hessian
+    # twice, which the transformed-CI branch below would otherwise do.
+    cov_y = _invert(hessian, "Hessian")
+    J = transform.jacobian(y_hat)
+    cov = J @ cov_y @ J.T
     se = np.sqrt(np.diag(cov))
     z = sps.norm.ppf(1.0 - alpha / 2.0)
 
     if ci_method == "transformed":
         # Delta method in the unconstrained space, then map bounds back. Keeps
         # positive parameters positive and yields asymmetric intervals.
-        cov_y = _invert(hessian, "Hessian")
         s_y = np.sqrt(np.diag(cov_y))
         lower = transform.inverse(y_hat - z * s_y)
         upper = transform.inverse(y_hat + z * s_y)
@@ -129,8 +154,9 @@ def _build_result(y_hat, hessian, transform, *, alpha, nnlf_value,
     )
 
 
-def fit_mle(objective, p0, *, transform=None, alpha=0.05, names=None,
-            optimizer_kwds=None, ndt_kwds=None, ci_method="transformed"):
+def fit_mle(objective, p0, *, gradient=None, transform=None, alpha=0.05,
+            names=None, optimizer_kwds=None, ndt_kwds=None,
+            ci_method="transformed"):
     """Maximum-likelihood fit of ``objective`` starting from ``p0``.
 
     Parameters
@@ -141,6 +167,10 @@ def fit_mle(objective, p0, *, transform=None, alpha=0.05, names=None,
         objective never sees the unconstrained space.
     p0 : array_like
         Starting values, in natural parameters.
+    gradient : callable, optional
+        ``gradient(p) -> array``, the gradient of ``objective`` with respect to
+        the *natural* parameters. The chain rule into the unconstrained space
+        is applied internally, so models need not know about the transform.
     transform : Transform, optional
         Reparameterisation used for optimisation. Defaults to
         :class:`~maintkit.transforms.Identity`.
@@ -152,6 +182,12 @@ def fit_mle(objective, p0, *, transform=None, alpha=0.05, names=None,
         Forwarded to ``scipy.optimize.minimize`` and ``numdifftools.Hessian``.
     ci_method : {'transformed', 'natural'}
         See :func:`_build_result`.
+
+    Warns
+    -----
+    ConvergenceWarning
+        When the optimiser does not report success. Filter it with
+        ``warnings.filterwarnings("ignore", category=ConvergenceWarning)``.
 
     Returns
     -------
@@ -168,7 +204,30 @@ def fit_mle(objective, p0, *, transform=None, alpha=0.05, names=None,
     def objective_y(y):
         return objective(transform.inverse(y))
 
+    if gradient is not None:
+        def gradient_y(y):
+            # Chain rule into the unconstrained space. The Jacobian is diagonal
+            # for every Transform here, so this is an elementwise product
+            # rather than a matrix product.
+            g = np.asarray(gradient(transform.inverse(y)), dtype=float)
+            return g * transform.jacobian_diag(y)
+
+        optimizer_kwds.setdefault("jac", gradient_y)
+
     result = opt.minimize(objective_y, y0, **optimizer_kwds)
+
+    if not result.success:
+        warnings.warn(
+            f"Optimiser did not converge cleanly: {result.message} "
+            "Estimates and standard errors may be unreliable -- the Hessian is "
+            "evaluated at the point the optimiser stopped at. Inspect "
+            "FitResult.success and .message, or pass optimizer_kwds to change "
+            "the method or tolerance. Silence with "
+            "warnings.filterwarnings('ignore', category=ConvergenceWarning).",
+            ConvergenceWarning,
+            stacklevel=2,
+        )
+
     y_hat = np.atleast_1d(result.x)
     hessian = ndt.Hessian(objective_y, **ndt_kwds)(y_hat)
 

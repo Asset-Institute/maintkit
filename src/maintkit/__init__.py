@@ -32,7 +32,13 @@ from maintkit.probability_plotting import (
     weibull_reliability_confidence_interval,
 )
 from maintkit.wiener import Wiener, RBM, weiner
-from maintkit.inference import FitResult, fit_mle, result_at, hessian_at
+from maintkit.inference import (
+    FitResult,
+    ConvergenceWarning,
+    fit_mle,
+    result_at,
+    hessian_at,
+)
 from maintkit.transforms import Transform, Identity, Log, Logit, Composite
 
 __version__ = "0.1.0"
@@ -56,6 +62,7 @@ __all__ = [
     "RBM",
     "weiner",
     "FitResult",
+    "ConvergenceWarning",
     "fit_mle",
     "result_at",
     "hessian_at",

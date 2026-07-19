@@ -7,8 +7,18 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numdifftools as ndt
 from maintkit.utilities import _parameter_transform_log,_parameter_transform_identity
+from maintkit.inference import fit_mle
+from maintkit.transforms import Identity, Log
 
 class reliability_distribution(stats.rv_continuous):
+
+    #: Transform used when fitting. Subclasses override for constrained
+    #: parameters (see weibull, which uses Log for positive eta/beta).
+    parameter_transform = Identity()
+
+    #: Parameter names, used only for FitResult.summary().
+    parameter_names = None
+
     def __init__(self,*args,**kwargs): #need *args and **kwargs so that I pass these into the methods inherited from the parent class!
         stats.rv_continuous.__init__(self,*args,**kwargs)
         self.a = 0
@@ -25,32 +35,77 @@ class reliability_distribution(stats.rv_continuous):
     def conditional_reliability(self,tau,t0):
         return np.exp(self.log_reliability(t0+tau) - self.log_reliability(t0))
     
-    def fit(self,ti,p0,observed="all",ndt_kwds={}): # Overwriting scipy.stats fitting because it seems that it doesn't handle censoring
-        y0 = self.transform_scale(p0,direction="forward")
-        obj = lambda x: self.nnlf(self.transform_scale(x),ti,observed)
-        result = opt.minimize(obj,y0)
-        y_hat = result.x
-        H = ndt.Hessian(obj,**ndt_kwds)(y_hat)
-        p_hat,Ht = self.transform_scale(y_hat,likelihood_hessian=H,direction="inverse")
-        p_cov = np.linalg.inv(Ht)
-        s = np.sqrt(np.diag(p_cov))
-        p_ci = p_hat + 1.96*np.array([-s,s])
-        
-        return p_hat, p_ci.transpose(), p_cov
-    
-    def fit_interval(self,ti,ins,p0,observed="all",bnds=None,ndt_kwds={}): # Overwriting scipy.stats fitting because it seems that it doesn't handle censoring
-        y0 = self.transform_scale(p0,direction="forward")
-        obj = lambda x: self.nnlf_interval(self.transform_scale(x),ti,ins,observed)
-        result = opt.minimize(obj,y0)
-        y_hat = result.x
-        H = ndt.Hessian(obj,**ndt_kwds)(y_hat)
-        p_hat,Ht = self.transform_scale(y_hat,likelihood_hessian=H,direction="inverse")
-        p_cov = np.linalg.inv(Ht)
-        s = np.sqrt(np.diag(p_cov))
-        p_ci = p_hat + 1.96*np.array([-s,s]) 
+    def fit(self,ti,p0,observed="all",*,alpha=0.05,ndt_kwds=None,
+            optimizer_kwds=None,ci_method="transformed",
+            use_analytic_gradient=True):
+        """Fit by maximum likelihood, handling right-censored observations.
 
-        return p_hat, p_ci.transpose()    
-    
+        Overrides ``scipy.stats`` fitting, which does not handle censoring.
+
+        Parameters
+        ----------
+        ti : array_like
+            Observed times.
+        p0 : array_like
+            Starting values, in natural parameters.
+        observed : array_like or "all"
+            1 for an observed failure, 0 for a right-censored observation.
+        alpha : float
+            Significance level; 0.05 gives 95% intervals.
+        ci_method : {'transformed', 'natural'}
+            'transformed' (default) builds intervals in the unconstrained
+            space and maps them back, so bounds respect parameter constraints.
+            'natural' reproduces the symmetric intervals returned by versions
+            before the fitters were consolidated.
+        use_analytic_gradient : bool
+            Use the subclass's ``nnlf_gradient`` when it defines one (weibull
+            does). Set False to fall back to finite differences, e.g. to
+            compare against results produced before the score was available.
+
+        Returns
+        -------
+        FitResult
+        """
+        # Use the closed-form score when the subclass provides one. Removes the
+        # finite-difference noise that otherwise stops BFGS short of its gtol.
+        score = getattr(self, "nnlf_gradient", None) if use_analytic_gradient else None
+        gradient = (lambda p: score(p,ti,observed)) if score is not None else None
+
+        return fit_mle(
+            lambda p: self.nnlf(p,ti,observed),
+            p0,
+            gradient=gradient,
+            transform=self.parameter_transform,
+            alpha=alpha,
+            names=self.parameter_names,
+            optimizer_kwds=optimizer_kwds,
+            ndt_kwds=ndt_kwds,
+            ci_method=ci_method,
+        )
+
+    def fit_interval(self,ti,ins,p0,observed="all",bnds=None,*,alpha=0.05,
+                     ndt_kwds=None,optimizer_kwds=None,ci_method="transformed"):
+        """Fit by maximum likelihood from interval-censored observations.
+
+        ``ins`` holds the lower bound of each interval and ``ti`` the upper
+        bound. See :meth:`fit` for the remaining parameters.
+
+        Returns
+        -------
+        FitResult
+        """
+        return fit_mle(
+            lambda p: self.nnlf_interval(p,ti,ins,observed),
+            p0,
+            transform=self.parameter_transform,
+            alpha=alpha,
+            names=self.parameter_names,
+            optimizer_kwds=optimizer_kwds,
+            ndt_kwds=ndt_kwds,
+            ci_method=ci_method,
+        )
+
+
     def freeze(self, *args, **kwds):
         return reliability_distribution_frozen(self, *args, **kwds) # freeze using new reliabilty class, otherwise new functions won't be defined (e.g. reliability)
     
@@ -191,7 +246,12 @@ class expdist(reliability_distribution):
         return p_hat, p_ci
         
 class weibull(reliability_distribution):
-   
+
+    # eta (scale) and beta (shape) are both strictly positive, so fit on the
+    # log scale. Matches the legacy transform_scale override below.
+    parameter_transform = Log()
+    parameter_names = ("eta", "beta")
+
     def _pdf(self,t,beta):
         return stats.distributions.weibull_min.pdf(t,beta)
    
@@ -236,6 +296,49 @@ class weibull(reliability_distribution):
         
         return -loglike
     
+    def nnlf_gradient(self,p,ti,observed="all"):
+        r"""Analytic score of the right-censored Weibull negative log-likelihood.
+
+        With :math:`u_i = \log(t_i/\eta)`, :math:`z_i = (t_i/\eta)^\beta`,
+        :math:`\delta_i` the failure indicator and :math:`r = \sum \delta_i`,
+        the log-likelihood is
+
+        .. math::
+            \ell = r\log\beta - r\log\eta
+                   + (\beta-1)\sum \delta_i u_i - \sum z_i
+
+        (the :math:`-\sum z_i` runs over all observations, since
+        :math:`\log f` contains :math:`-z` and :math:`\log S = -z`), giving
+
+        .. math::
+            \partial\ell/\partial\eta  &= (\beta/\eta)\left(\sum z_i - r\right) \\
+            \partial\ell/\partial\beta &= r/\beta + \sum \delta_i u_i
+                                          - \sum z_i u_i
+
+        Setting these to zero recovers the textbook censored-Weibull equations
+        :math:`\eta^\beta = \sum t_i^\beta / r` and
+        :math:`1/\beta = \sum t_i^\beta \log t_i / \sum t_i^\beta
+        - r^{-1}\sum \delta_i \log t_i`.
+
+        Returns the gradient of the *negative* log-likelihood, ordered
+        ``(eta, beta)`` to match :meth:`nnlf`.
+        """
+        eta, beta = p[0], p[1]
+        ti = np.asarray(ti, dtype=float)
+
+        if isinstance(observed,str) and observed == "all":
+            observed = np.ones(ti.shape)
+        observed = np.asarray(observed, dtype=float)
+
+        u = np.log(ti) - np.log(eta)
+        z = np.exp(beta*u)
+        r = observed.sum()
+
+        dl_deta  = (beta/eta)*(z.sum() - r)
+        dl_dbeta = r/beta + np.sum(observed*u) - np.sum(z*u)
+
+        return -np.array([dl_deta, dl_dbeta])   # nnlf = -loglikelihood
+
     def transform_scale(self,x,likelihood_hessian=None,direction="inverse"):
         return _parameter_transform_log(x,likelihood_hessian=likelihood_hessian,\
             direction=direction)

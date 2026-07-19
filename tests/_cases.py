@@ -105,12 +105,18 @@ def run_case(name):
     is still characterised -- and a change in *how* it blows up is still a
     behavioural change worth catching.
     """
+    from maintkit.inference import FitResult
+
     try:
         out = CASES[name]()
     except Exception as exc:  # noqa: BLE001 - characterising current behaviour
         return {"status": "error", "type": type(exc).__name__, "message": str(exc)}
 
-    if not isinstance(out, tuple):
+    if isinstance(out, FitResult):
+        # Record the same three quantities the pre-migration fitters returned,
+        # so recorded values stay comparable across the migration.
+        out = (out.params, out.ci, out.cov)
+    elif not isinstance(out, tuple):
         out = (out,)
 
     record = {"status": "ok", "n_outputs": len(out), "outputs": []}

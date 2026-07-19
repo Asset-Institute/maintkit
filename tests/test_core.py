@@ -30,13 +30,13 @@ def test_weibull_mle_recovers_parameters():
     beta_true, eta_true = 2.0, 100.0
     rng = np.random.default_rng(2)
     ti = sps.weibull_min.rvs(beta_true, scale=eta_true, size=2000, random_state=rng)
-    p_hat, p_ci, p_cov = weibull().fit(ti, p0=[80.0, 1.5])
-    eta_hat, beta_hat = p_hat
+    res = weibull().fit(ti, p0=[80.0, 1.5])
+    eta_hat, beta_hat = res.params
     assert abs(eta_hat - eta_true) / eta_true < 0.1
     assert abs(beta_hat - beta_true) / beta_true < 0.1
     # 95% CIs should bracket the truth for a sample this large
-    assert p_ci[0, 0] < eta_true < p_ci[0, 1]
-    assert p_ci[1, 0] < beta_true < p_ci[1, 1]
+    assert res.ci[0, 0] < eta_true < res.ci[0, 1]
+    assert res.ci[1, 0] < beta_true < res.ci[1, 1]
 
 
 def test_power_law_nhpp_fit_recovers_shape():
