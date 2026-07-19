@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maintkit"
+version = "0.1.0"
+description = "Reliability analysis and maintenance optimization toolkit"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Michael Cholette", email = "michael.cholette@qut.edu.au" },
+]
+keywords = [
+    "reliability",
+    "maintenance",
+    "survival analysis",
+    "weibull",
+    "poisson process",
+    "degradation",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "numpy>=1.21",
+    "scipy>=1.7",
+    "matplotlib>=3.4",
+    "numdifftools>=0.9.40",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "pre-commit>=3.0", "nbstripout>=0.7"]
+
+[project.urls]
+Homepage = "https://github.com/cholette/maintkit"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

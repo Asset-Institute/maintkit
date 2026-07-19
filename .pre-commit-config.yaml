@@ -1,0 +1,44 @@
+# Pre-commit hooks for maintkit.
+#
+# Setup (once per clone):
+#     pip install -e ".[dev]"
+#     pre-commit install
+#
+# Run `pre-commit autoupdate` to pin hooks to their current releases.
+
+# Legacy MATLAB code is frozen -- never rewrite it.
+exclude: ^legacy/
+
+repos:
+  # The one you actually want: strip notebook outputs.
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.7.1
+    hooks:
+      - id: nbstripout
+        name: strip Jupyter notebook outputs
+        files: \.ipynb$
+
+  # Validation only -- these never modify files, so they can't fight
+  # a partially-staged (git add -p) workflow.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+      - id: check-toml
+      - id: check-yaml
+      - id: check-merge-conflict
+
+  # OPTIONAL: whitespace normalisation. These REWRITE files, which is what
+  # broke the first commit attempt. Only enable once the reorganisation is
+  # committed, and expect a one-off churn commit when you first turn them on.
+  #
+  # - repo: https://github.com/pre-commit/pre-commit-hooks
+  #   rev: v4.6.0
+  #   hooks:
+  #     - id: trailing-whitespace
+  #       files: ^(src|tests)/
+  #       exclude: \.ipynb$
+  #     - id: end-of-file-fixer
+  #       files: ^(src|tests)/
+  #       exclude: \.ipynb$
