@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numdifftools as ndt
-from ReliabilityAnalysis.utilities import _parameter_transform_log,_parameter_transform_identity
+from maintkit.utilities import _parameter_transform_log,_parameter_transform_identity
 
 class reliability_distribution(stats.rv_continuous):
     def __init__(self,*args,**kwargs): #need *args and **kwargs so that I pass these into the methods inherited from the parent class!
@@ -72,6 +72,40 @@ class reliability_distribution_frozen(stats._distn_infrastructure.rv_frozen):
         return self.dist.hazard(x,*self.args, **self.kwds)
     def conditional_reliability(self,tau,t0):
         return np.exp(self.dist.log_reliability(t0+tau,*self.args, **self.kwds) - self.dist.log_reliability(t0,*self.args, **self.kwds))
+    
+    def plot(self,type:str='pdf',figkwds={},pltkwds={},ax=None,t0=None):
+        """
+            Plots the pdf and cdf of the distribution. 
+            All keyword arguments are passed to matplotlib.pyplot.plot
+        """
+        assert type in ['pdf','cdf','reliability','hazard','conditional_reliability'], "type must be one of 'pdf', 'cdf', 'reliability', 'hazard', or 'conditional_reliability'"
+        t = np.linspace(self.ppf(0.001),self.ppf(0.999),1000)
+        if ax is None:
+            _,ax = plt.subplots(1,2,**figkwds)
+            if type == 'pdf':
+                ax.set_ylabel("f(t)")
+            elif type == 'cdf':
+                ax.set_ylabel("F(t)")
+            elif type == 'reliability':
+                ax.set_ylabel("R(t)")
+            elif type == 'hazard':
+                ax.set_ylabel("$\lambda(t)$")
+            elif type == 'conditional_reliability': 
+                ax.set_ylabel(f"R(t+{t0}|{t0})")
+        
+        if type == 'pdf':
+            ax.plot(t,self.pdf(t),**pltkwds)
+        elif type == 'cdf':
+            ax.plot(t,self.cdf(t),**pltkwds)
+        elif type == 'reliability':
+            ax.plot(t,self.sf(t),**pltkwds)
+        elif type == 'hazard':
+            ax.plot(t,self.hazard(t),**pltkwds)
+        elif type == 'conditional_reliability':
+            assert t0 is not None, "t0 must be specified for conditional reliability"
+            ax.plot(t,self.conditional_reliability(t,t0),**pltkwds)
+
+        return ax
 
 class reliability_from_hazard(reliability_distribution):
     def __init__(self,h,*args,**kwargs):
@@ -126,7 +160,7 @@ class expdist(reliability_distribution):
         return -loglike
     
     def fit(self,ti,observed="all",bnds=None):
-        if observed == "all":
+        if isinstance(observed,str) and observed == "all":
             r = len(ti)
         else:
             r = np.sum(observed)

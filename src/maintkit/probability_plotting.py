@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numdifftools as ndt
-from ReliabilityAnalysis.distributions import weibull,reliability_distribution_frozen
+from maintkit.distributions import weibull,reliability_distribution_frozen
 
 def ecdf(ti,observed,pos="midpoint",plot=True):
     ti = np.array(ti)

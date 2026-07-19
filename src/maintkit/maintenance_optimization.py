@@ -1,5 +1,5 @@
 import numpy as np
-import ReliabilityAnalysis.distributions as radist
+import maintkit.distributions as radist
 
 
 class interval_replacement:

@@ -3,8 +3,8 @@ from scipy import optimize as opt
 from scipy.integrate import quad
 import numpy as np
 import numdifftools as ndt
-from ReliabilityAnalysis.utilities import _parameter_transform_log
-import ReliabilityAnalysis.poisson_process as rpp
+from maintkit.utilities import _parameter_transform_log
+import maintkit.poisson_process as rpp
 
 class imperfect_pm_minimal_cm:
     # Uses a proportinal age reduction modification of a power-law NHPP for now. 

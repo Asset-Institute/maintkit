@@ -3,14 +3,14 @@ from scipy import optimize as opt
 from scipy.integrate import quad
 import numpy as np
 import numdifftools as ndt
-from ReliabilityAnalysis.utilities import _parameter_transform_log
+from maintkit.utilities import _parameter_transform_log
 
 class poisson_process:
     def __init__(self,parameters):
         self.parameters = parameters
     
     def intensity(self,t):
-        return "Intensity needs to be defined via subclassing."
+        raise NotImplementedError("Intensity must be defined via subclassing.")
 
     def random_counts(self,t,s=0,size=1):
         if s != min(t):
@@ -25,16 +25,14 @@ class poisson_process:
         return np.cumsum(dN,axis=1)
 
     def cumulative_intensity(self,t1,t0=0):
-        LAMBDA = [0]*len(t1)
-        for ii,_ in enumerate(t1):
-            if len(list(t0))==1:
-                t0ii = t0
-            elif len(t0) != len(list(t1)):
-                raise ValueError("t0 must be an integer or a list of the same length as t1")
-            else:
-                t0ii = t0[ii]
-            LAMBDA[ii] = quad(self.intensity,t0ii,t1[ii])[0]
-        
+        t1 = np.atleast_1d(t1)
+        t0 = np.atleast_1d(t0)
+        if t0.size == 1:
+            t0 = np.full(t1.shape, t0.item())
+        elif t0.size != t1.size:
+            raise ValueError("t0 must be a scalar or the same length as t1")
+
+        LAMBDA = [quad(self.intensity, t0[ii], t1[ii])[0] for ii in range(t1.size)]
         return LAMBDA
     
     def log_intensity(self,t):
@@ -59,19 +57,20 @@ class poisson_process:
             event_times = event_times.tolist()
 
         # check for valid truncation time
-        if truncation_times != None:
+        if truncation_times is not None:
             for m,_ in enumerate(event_times):
-                if len(event_times[m]) > 0:
-                    assert truncation_times[m] > max(event_times[m]), "Invalid truncation time for asset "+str(m)
+                if len(event_times[m]) > 0 and truncation_times[m] is not None:
+                    if not truncation_times[m] > max(event_times[m]):
+                        raise ValueError("Invalid truncation time for asset "+str(m))
 
         like = 0
-        for m,_ in enumerate(event_times): 
+        for m,_ in enumerate(event_times):
             for f in event_times[m]:
                 like += self.log_intensity(f)
-        
-            if truncation_times[m] != None:
+
+            if truncation_times is not None and truncation_times[m] is not None:
                 T = truncation_times[m]
-                like += -self.cumulative_intensity(T,t0=0)
+                like += -np.sum(self.cumulative_intensity(T,t0=0))
         
         self.parameters = original_parameters
         return -like
@@ -105,7 +104,7 @@ class power_law_nhpp(poisson_process):
     def __init__(self,a,b):
         self.parameters = [a,b]
     
-    def intesity(self,t):
+    def intensity(self,t):
         a,b = self.parameters
         return a*b*t**(b-1)
     

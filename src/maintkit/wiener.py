@@ -1,9 +1,9 @@
 import numpy as np
 import scipy.stats as sps
-from ReliabilityAnalysis.utilities import _ensure_list
+from maintkit.utilities import _ensure_list
 from scipy.optimize import minimize, fsolve
 
-class weiner:
+class Wiener:
     def __init__(self,mu=None,sigma=None):
         self.mu = mu
         self.sigma = sigma
@@ -89,10 +89,10 @@ class weiner:
             Hi = res.hess_inv
 
         # estimate parameter covariance. See Reparameterization at https://en.wikipedia.org/wiki/Fisher_information 
-        J = np.array([     [1,0], 
-                            [0,np.exp(res.x[1])] 
+        J = np.array([     [1,0],
+                            [0,np.exp(res.x[1])]
                         ])
-        p_cov = J.T @ Hi @ J.T
+        p_cov = J.T @ Hi @ J
     
         if inplace is True:
             self.mu = mu 
@@ -113,7 +113,7 @@ class weiner:
             return mu,sigma,p_cov          
         
 
-class RBM(weiner):
+class RBM(Wiener):
     def __init__(self,mu,sigma):
         super().__init__(mu,sigma)
     
@@ -205,4 +205,8 @@ class RBM(weiner):
             L[i] = fsolve( lambda x: alpha-self.transition_distribution(x,ti,x0,type="cdf"),guessesL[i])
         
         return L,U
+
+
+# Backwards-compatible alias for the previous (misspelled) class name.
+weiner = Wiener
 
