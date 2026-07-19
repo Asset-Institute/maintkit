@@ -44,3 +44,5 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# repo root on sys.path so the characterisation harness can `import tests`
+pythonpath = ["."]

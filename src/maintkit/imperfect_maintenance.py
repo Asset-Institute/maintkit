@@ -4,19 +4,23 @@ from scipy.integrate import quad
 import numpy as np
 import numdifftools as ndt
 from maintkit.utilities import _parameter_transform_log
-import maintkit.poisson_process as rpp
+# Import the class directly rather than `import maintkit.poisson_process as rpp`.
+# The module and the class share the name `poisson_process`, so the package
+# __init__ re-binds the attribute `maintkit.poisson_process` to the *class*,
+# and `import ... as rpp` would then resolve to the class, not the module.
+from maintkit.poisson_process import power_law_nhpp
 
 class imperfect_pm_minimal_cm:
     # Uses a proportinal age reduction modification of a power-law NHPP for now. 
     # Only works for a single asset at the moment. 
 
     def __init__(self,a,b,rho):
-        self.baseline_model = rpp.power_law_nhpp(a,b)
+        self.baseline_model = power_law_nhpp(a,b)
         assert rho<=1.0 and rho>=0, "Repair factor must be between 0 and 1 (inclusive)"
         self.repair_factor = rho
     
     def set_parameters(self,a,b,r):
-        self.baseline_model = rpp.power_law_nhpp(a,b)
+        self.baseline_model = power_law_nhpp(a,b)
         assert r<=1.0 and r>=0, "Repair factor must be between 0 and 1 (inclusive)"
         self.repair_factor = r
 
