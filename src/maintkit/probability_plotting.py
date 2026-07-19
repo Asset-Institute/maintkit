@@ -31,7 +31,7 @@ def ecdf(ti,observed,pos="midpoint",plot=True):
         fig, ax = plt.subplots()
         ax.step(x,Fhat,where="post")
         ax.set_xlabel("Time")
-        ax.set_ylabel("$\hat{F}$")
+        ax.set_ylabel(r"$\hat{F}$")
 
     return x,Fhat
 
@@ -91,7 +91,7 @@ def kaplan_meier(ti,observed,plot=True,confidence_interval="greenwood"):
         ax.step(uti,Fhat,where="post",label=r"$\hat{F}(t)$",color="blue")
         ax.fill_between(uti,LB,y2=UB,linestyle='--',color="blue",step="post",label="95% CI",alpha=0.1)
         ax.set_xlabel("Time")
-        ax.set_ylabel("$\hat{F}(t)$")
+        ax.set_ylabel(r"$\hat{F}(t)$")
         ax.set_ylim((0,ax.get_ylim()[1]))
         plt.legend()
         return uti,Fhat,LB,UB,fig,ax

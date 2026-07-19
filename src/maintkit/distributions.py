@@ -73,37 +73,56 @@ class reliability_distribution_frozen(stats._distn_infrastructure.rv_frozen):
     def conditional_reliability(self,tau,t0):
         return np.exp(self.dist.log_reliability(t0+tau,*self.args, **self.kwds) - self.dist.log_reliability(t0,*self.args, **self.kwds))
     
-    def plot(self,type:str='pdf',figkwds={},pltkwds={},ax=None,t0=None):
+    def plot(self,type:str='pdf',figkwds=None,pltkwds=None,ax=None,t0=None):
         """
-            Plots the pdf and cdf of the distribution. 
-            All keyword arguments are passed to matplotlib.pyplot.plot
+        Plot one characteristic of the frozen distribution.
+
+        Parameters
+        ----------
+        type : {'pdf','cdf','reliability','hazard','conditional_reliability'}
+            Which curve to plot.
+        figkwds : dict, optional
+            Passed to ``matplotlib.pyplot.subplots``; used only when ``ax is None``.
+        pltkwds : dict, optional
+            Passed to ``matplotlib.axes.Axes.plot``.
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on. Created if not supplied.
+        t0 : float, optional
+            Required when ``type='conditional_reliability'``.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
         """
-        assert type in ['pdf','cdf','reliability','hazard','conditional_reliability'], "type must be one of 'pdf', 'cdf', 'reliability', 'hazard', or 'conditional_reliability'"
+        valid = ['pdf','cdf','reliability','hazard','conditional_reliability']
+        if type not in valid:
+            raise ValueError(f"type must be one of {valid}, got {type!r}")
+        if type == 'conditional_reliability' and t0 is None:
+            raise ValueError("t0 must be specified for conditional_reliability")
+
+        # avoid mutable default arguments
+        figkwds = {} if figkwds is None else figkwds
+        pltkwds = {} if pltkwds is None else pltkwds
+
+        curves = {
+            'pdf':         (self.pdf, "f(t)"),
+            'cdf':         (self.cdf, "F(t)"),
+            'reliability': (self.sf,  "R(t)"),
+            'hazard':      (self.hazard, r"$\lambda(t)$"),
+            'conditional_reliability': (
+                lambda x: self.conditional_reliability(x,t0),
+                f"R(t+{t0}|{t0})",
+            ),
+        }
+        fun,ylabel = curves[type]
+
         t = np.linspace(self.ppf(0.001),self.ppf(0.999),1000)
         if ax is None:
-            _,ax = plt.subplots(1,2,**figkwds)
-            if type == 'pdf':
-                ax.set_ylabel("f(t)")
-            elif type == 'cdf':
-                ax.set_ylabel("F(t)")
-            elif type == 'reliability':
-                ax.set_ylabel("R(t)")
-            elif type == 'hazard':
-                ax.set_ylabel("$\lambda(t)$")
-            elif type == 'conditional_reliability': 
-                ax.set_ylabel(f"R(t+{t0}|{t0})")
-        
-        if type == 'pdf':
-            ax.plot(t,self.pdf(t),**pltkwds)
-        elif type == 'cdf':
-            ax.plot(t,self.cdf(t),**pltkwds)
-        elif type == 'reliability':
-            ax.plot(t,self.sf(t),**pltkwds)
-        elif type == 'hazard':
-            ax.plot(t,self.hazard(t),**pltkwds)
-        elif type == 'conditional_reliability':
-            assert t0 is not None, "t0 must be specified for conditional reliability"
-            ax.plot(t,self.conditional_reliability(t,t0),**pltkwds)
+            _,ax = plt.subplots(**figkwds)
+
+        ax.plot(t,fun(t),**pltkwds)
+        ax.set_xlabel("t")
+        ax.set_ylabel(ylabel)
 
         return ax
 
