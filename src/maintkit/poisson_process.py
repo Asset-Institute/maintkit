@@ -137,6 +137,61 @@ class power_law_nhpp(poisson_process):
     def log_intensity(self, t):
         a,b = [*self.parameters]
         return np.log(a)+np.log(b)+(b-1)*np.log(t)
+
+    def nnlf_gradient(self,p,event_times,truncation_times=None):
+        r"""Analytic score of the power-law NHPP negative log-likelihood.
+
+        With intensity :math:`\lambda(t)=a b t^{b-1}` and cumulative intensity
+        :math:`\Lambda(T)=a T^{b}`, the log-likelihood across assets is
+
+        .. math::
+            \ell = N\log a + N\log b + (b-1)S - a\sum_m T_m^{b}
+
+        where :math:`N` is the total number of events and
+        :math:`S=\sum_m\sum_k \log t_{mk}`. The compensator sum runs only over
+        assets that actually have a truncation time, matching :meth:`nnlf`,
+        which omits the :math:`-\Lambda(T)` term when the truncation time is
+        ``None``. Keeping the two consistent matters: an objective and a
+        gradient that disagree will send the optimiser somewhere neither of
+        them minimises.
+
+        .. math::
+            \partial\ell/\partial a &= N/a - \sum_m T_m^{b} \\
+            \partial\ell/\partial b &= N/b + S - a\sum_m T_m^{b}\log T_m
+
+        Setting these to zero recovers :math:`\hat a = N/\sum_m T_m^{b}` and
+        the profile equation for :math:`b`.
+
+        Returns the gradient of the *negative* log-likelihood -- that is,
+        minus the score -- ordered ``(a, b)`` to match :meth:`nnlf`.
+        """
+        a, b = p[0], p[1]
+
+        if isinstance(event_times,np.ndarray):
+            event_times = event_times.tolist()
+
+        n_events = 0
+        sum_log_t = 0.0
+        for events in event_times:
+            n_events += len(events)
+            for t in events:
+                sum_log_t += np.log(t)
+
+        sum_Tb = 0.0
+        sum_Tb_logT = 0.0
+        if truncation_times is not None:
+            for m,_ in enumerate(event_times):
+                T = truncation_times[m]
+                if T is None:
+                    continue
+                Tb = T**b
+                sum_Tb += Tb
+                sum_Tb_logT += Tb*np.log(T)
+
+        dl_da = n_events/a - sum_Tb
+        dl_db = n_events/b + sum_log_t - a*sum_Tb_logT
+
+        return -np.array([dl_da, dl_db])
     
     def fit(self,event_times,truncation_times=None,ndt_kwds={}):
 
@@ -216,7 +271,7 @@ class power_law_nhpp(poisson_process):
 
         return -loglike
     
-    def fit_interval(self,ni,ins,p0,cumulative=False,estimate_ci=False,ndt_kwds={}): # Overwriting scipy.stats fitting because it seems that it doesn't handle censoring
+    def fit_interval(self,ni,ins,p0,cumulative=False,estimate_ci=False,ndt_kwds={}):
         y0 = self.transform_scale(p0,direction="forward")
         obj = lambda x: self.nnlf_interval(self.transform_scale(x),ni,ins,cumulative=cumulative)
         result = opt.minimize(obj,y0)
