@@ -4,8 +4,17 @@ from scipy.integrate import quad
 import numpy as np
 import numdifftools as ndt
 from maintkit.utilities import _parameter_transform_log
+from maintkit.inference import fit_mle, result_at
+from maintkit.transforms import Log
 
 class poisson_process:
+
+    #: Transform used when fitting. Both power-law parameters are positive.
+    parameter_transform = Log()
+
+    #: Parameter names, used only for FitResult.summary().
+    parameter_names = None
+
     def __init__(self,parameters):
         self.parameters = parameters
     
@@ -75,32 +84,84 @@ class poisson_process:
         self.parameters = original_parameters
         return -like
 
-    def fit(self,event_times,p0,truncation_times=None,ndt_kwds={}):
+    def fit(self,event_times,p0,truncation_times=None,*,alpha=0.05,
+            ndt_kwds=None,optimizer_kwds=None,ci_method="transformed",
+            use_analytic_gradient=True):
+        """Fit the process by maximum likelihood.
 
-        msg = "event_times must be a list of lists or a 2D numpy arrays"
+        Parameters
+        ----------
+        event_times : list of lists, or 2D ndarray
+            ``event_times[asset][k]`` is the k-th event time for that asset.
+            A ragged list is preferred, since assets rarely have equal counts.
+        p0 : array_like
+            Starting values, in natural parameters.
+        truncation_times : list, optional
+            End of observation per asset. ``None`` -- for the whole argument or
+            for an individual asset -- means that asset contributes no
+            compensator term, i.e. its last event is a failure rather than the
+            end of observation.
+        alpha : float
+            Significance level; 0.05 gives 95% intervals.
+        ci_method : {'transformed', 'natural'}
+            'transformed' (default) matches what this module already did:
+            intervals built on the log scale and mapped back.
+        use_analytic_gradient : bool
+            Use the subclass's ``nnlf_gradient`` when it defines one.
+
+        Returns
+        -------
+        FitResult
+        """
+        event_times = self._validate_event_times(event_times)
+
+        score = getattr(self, "nnlf_gradient", None) if use_analytic_gradient else None
+        gradient = (
+            (lambda p: score(p,event_times,truncation_times))
+            if score is not None else None
+        )
+
+        return fit_mle(
+            lambda p: self.nnlf(p,event_times,truncation_times=truncation_times),
+            p0,
+            gradient=gradient,
+            transform=self.parameter_transform,
+            alpha=alpha,
+            names=self.parameter_names,
+            optimizer_kwds=optimizer_kwds,
+            ndt_kwds=ndt_kwds,
+            ci_method=ci_method,
+        )
+
+    @staticmethod
+    def _validate_event_times(event_times):
+        """Normalise event times to a list of lists.
+
+        Raises rather than asserts: assertions are stripped under ``python -O``,
+        which would turn a clear message into an obscure failure later.
+        """
+        if isinstance(event_times,np.ndarray):
+            return [event_times[m,:].tolist() for m in range(event_times.shape[0])]
         if isinstance(event_times,list):
-            assert all([isinstance(event_times[m],list) for m in range(len(event_times))]),msg
-        elif isinstance(event_times,np.ndarray):
-            event_times = [event_times[m,:] for m in range(event_times.shape[0])]
-
-        y0 = self.transform_scale(p0,direction="forward")
-        obj = lambda x: self.nnlf(self.transform_scale(x),event_times,truncation_times=truncation_times)
-        result = opt.minimize(obj,y0)
-        y_hat = result.x
-        H = ndt.Hessian(obj,**ndt_kwds)(y_hat)
-        p_hat,Ht = self.transform_scale(y_hat,likelihood_hessian=H,direction="inverse")
-        log_p_cov = np.linalg.inv(H)
-        s = np.sqrt(np.diag(log_p_cov))
-        p_ci =  np.exp(y_hat +1.96*np.array([-s,s]))
-
-        p_cov = np.linalg.inv(Ht)
-        return p_hat, p_ci.transpose(),p_cov
+            if not all(isinstance(e,(list,np.ndarray)) for e in event_times):
+                raise TypeError(
+                    "event_times must be a list of lists (one list of event "
+                    "times per asset) or a 2D numpy array"
+                )
+            return [list(e) for e in event_times]
+        raise TypeError(
+            "event_times must be a list of lists or a 2D numpy array, got "
+            f"{type(event_times).__name__}"
+        )
 
     def transform_scale(self,x,likelihood_hessian=None,direction="inverse"):
          return _parameter_transform_log(x,likelihood_hessian=likelihood_hessian,\
             direction=direction)
 
 class power_law_nhpp(poisson_process):
+
+    parameter_names = ("a", "b")
+
     def __init__(self,a,b):
         self.parameters = [a,b]
     
@@ -193,52 +254,93 @@ class power_law_nhpp(poisson_process):
 
         return -np.array([dl_da, dl_db])
     
-    def fit(self,event_times,truncation_times=None,ndt_kwds={}):
+    def fit(self,event_times,truncation_times=None,*,alpha=0.05,
+            ndt_kwds=None,ci_method="transformed"):
+        """Fit by maximum likelihood using the closed-form estimate.
 
-        msg = "event_times must be a list of lists or a 2D numpy array"
-        if isinstance(event_times,list):
-            assert all([isinstance(event_times[m],list) for m in range(len(event_times))]),msg
-        elif isinstance(event_times,np.ndarray):
-            event_times = [event_times[m,:] for m in range(event_times.shape[0])]
+        The MLE is available analytically, so no optimiser runs; only the
+        Hessian is computed numerically, to obtain standard errors.
 
+        .. warning::
+           Unequal ``truncation_times`` are accepted but silently give a
+           non-MLE. See :meth:`_closed_form_estimate`. Fixed next commit.
 
-        # check for valid truncation time
+        Parameters
+        ----------
+        event_times : list of lists, or 2D ndarray
+            ``event_times[asset][k]`` is the k-th event time for that asset.
+        truncation_times : list, optional
+            End of observation per asset. If omitted, each asset's last event
+            is treated as its truncation time.
+        alpha : float
+            Significance level; 0.05 gives 95% intervals.
+
+        Returns
+        -------
+        FitResult
+        """
+        event_times = self._validate_event_times(event_times)
+        tau = self._resolve_truncation_times(event_times, truncation_times)
+        p_hat = self._closed_form_estimate(event_times, tau)
+
+        return result_at(
+            lambda p: self.nnlf(p,event_times,truncation_times=truncation_times),
+            p_hat,
+            transform=self.parameter_transform,
+            alpha=alpha,
+            names=self.parameter_names,
+            ndt_kwds=ndt_kwds,
+            ci_method=ci_method,
+        )
+
+    @staticmethod
+    def _resolve_truncation_times(event_times, truncation_times):
+        """Per-asset end of observation, defaulting to the last observed event."""
         tau = []
-        if truncation_times != None:
-            for m,_ in enumerate(event_times):
-                if len(event_times[m]) > 0:
-                    assert truncation_times[m] > max(event_times[m]), "Invalid truncation time for asset "+str(m)
-                tau.append(truncation_times[m])
-        else:
-            for m,_ in enumerate(event_times):
-                tau.append(max(event_times[m]))
-        
-        # analytical computation of MLE for observed failure times
-        num_failures = 0
-        den_beta_hat = 0
-        for n,_ in enumerate(event_times):
-            failures = event_times[n]
-            num_failures += len(failures)
-            for k,_ in enumerate(failures):
-                den_beta_hat += (np.log(tau[n])-np.log(failures[k]))
-        beta_hat = num_failures/den_beta_hat
+        for m, events in enumerate(event_times):
+            if truncation_times is None:
+                if not events:
+                    raise ValueError(
+                        f"asset {m} has no events and no truncation time, so "
+                        "its observation window is undefined"
+                    )
+                tau.append(max(events))
+            else:
+                T = truncation_times[m]
+                if events and not T > max(events):
+                    raise ValueError(
+                        f"Invalid truncation time for asset {m}: {T} is not "
+                        f"after its last event {max(events)}"
+                    )
+                tau.append(T)
+        return tau
 
-        sum_truncation_times = 0
-        for n,_ in enumerate(event_times):
-            sum_truncation_times += tau[n]**beta_hat
-        alpha_hat = num_failures/sum_truncation_times
-        p_hat = [alpha_hat,beta_hat]
+    @staticmethod
+    def _closed_form_estimate(event_times, tau):
+        r"""Crow closed-form estimate of ``(a, b)``.
 
-        # lazy numerical computation of the Hessian and parameter CIs
-        y_hat = self.transform_scale(p_hat,direction='forward')
-        obj = lambda x: self.nnlf(self.transform_scale(x),event_times,truncation_times=truncation_times)
-        H_log = ndt.Hessian(obj,**ndt_kwds)(y_hat)
-        log_p_cov = np.linalg.inv(H_log)
-        s = np.sqrt(np.diag(log_p_cov))
-        p_ci = np.exp(y_hat + 1.96*np.array([-s,s]))
-        _,H = self.transform_scale(y_hat,likelihood_hessian=H_log)
+        .. math::
+            \hat b = N \big/ \sum_m\sum_k \log(T_m / t_{mk}),
+            \qquad \hat a = N \big/ \sum_m T_m^{\hat b}
 
-        return p_hat, p_ci.transpose(),np.linalg.inv(H)
+        Only the MLE when all :math:`T_m` are equal -- the score equation
+
+        .. math::
+            N/b + S - N\frac{\sum_m T_m^b \log T_m}{\sum_m T_m^b} = 0
+
+        rearranges to the above only when the ratio collapses to
+        :math:`\log T`. Nothing enforces this, so unequal horizons silently
+        give a non-MLE (~12% off in ``a``). Fixed next commit.
+        """
+        n_events = sum(len(e) for e in event_times)
+        denominator = sum(
+            np.log(tau[m]) - np.log(t)
+            for m, events in enumerate(event_times)
+            for t in events
+        )
+        b_hat = n_events / denominator
+        a_hat = n_events / np.sum(np.asarray(tau, dtype=float) ** b_hat)
+        return np.array([a_hat, b_hat])
     
     def nnlf_interval(self,p,ni,ins,cumulative=False):
         
@@ -271,36 +373,58 @@ class power_law_nhpp(poisson_process):
 
         return -loglike
     
-    def fit_interval(self,ni,ins,p0,cumulative=False,estimate_ci=False,ndt_kwds={}):
-        y0 = self.transform_scale(p0,direction="forward")
-        obj = lambda x: self.nnlf_interval(self.transform_scale(x),ni,ins,cumulative=cumulative)
-        result = opt.minimize(obj,y0)
-        y_hat = result.x
-        
-        if estimate_ci:
-            H = ndt.Hessian(obj,**ndt_kwds)(y_hat)
-            p_hat,Ht = self.transform_scale(y_hat,likelihood_hessian=H,direction="inverse")
-            log_p_cov = np.linalg.inv(H)
-            s = np.sqrt(np.diag(log_p_cov))
-            p_ci = np.exp(p_hat + 1.96*np.array([-s,s]))
-            p_cov = np.linalg.inv(Ht)
-        else:
-            p_hat = self.transform_scale(y_hat,likelihood_hessian=None,direction="inverse")
-            n = p_hat.shape[0]
-            p_ci = np.nan*np.ones((n,2))
-            p_cov = np.nan*np.ones((2,2))
+    def fit_interval(self,ni,ins,p0,cumulative=False,*,alpha=0.05,
+                     ndt_kwds=None,optimizer_kwds=None,ci_method="transformed"):
+        """Fit from interval counts rather than exact event times.
 
-        return p_hat, p_ci.transpose(),p_cov
+        Parameters
+        ----------
+        ni : list of lists
+            Number of events observed in each inter-inspection interval.
+        ins : list of lists
+            Inspection times per asset; ``len(ins[m]) == len(ni[m]) + 1``.
+        p0 : array_like
+            Starting values, in natural parameters.
+        cumulative : bool
+            True if ``ni`` holds cumulative counts rather than per-interval
+            counts.
+        alpha : float
+            Significance level; 0.05 gives 95% intervals.
+
+        Returns
+        -------
+        FitResult
+            Confidence intervals and covariance are always computed; the
+            previous ``estimate_ci`` flag has been removed, since it returned
+            a result whose ``ci`` and ``cov`` were arrays of nan with an
+            inconsistent shape.
+        """
+        return fit_mle(
+            lambda p: self.nnlf_interval(p,ni,ins,cumulative=cumulative),
+            p0,
+            transform=self.parameter_transform,
+            alpha=alpha,
+            names=self.parameter_names,
+            optimizer_kwds=optimizer_kwds,
+            ndt_kwds=ndt_kwds,
+            ci_method=ci_method,
+        )
 
     def transform_scale(self,x,likelihood_hessian=None,direction="inverse"):
         return _parameter_transform_log(x,likelihood_hessian=likelihood_hessian,\
             direction=direction)
 
-    def mcf_confidence_interval(self,t,p_cov,kind="mcf",c=1.96,ndt_kwds={}):
+    def mcf_confidence_interval(self,t,p_cov,kind="mcf",*,alpha=0.05,
+                                ndt_kwds=None):
     
-        assert kind.lower() in ["time",'mcf'],"kind must be ""time"" or ""mcf""."
-        assert all([(t[ii+1]-t[ii])>=0 for ii in range(len(t)-1)]), "time vector must be sorted"
-        assert t[0]>=0, "Negative time doesn't make sense!"
+        if kind.lower() not in ["time", "mcf"]:
+            raise ValueError(f"kind must be 'time' or 'mcf', got {kind!r}")
+        if not all((t[ii+1]-t[ii]) >= 0 for ii in range(len(t)-1)):
+            raise ValueError("time vector must be sorted")
+        if t[0] < 0:
+            raise ValueError("times must be non-negative")
+        ndt_kwds = {} if ndt_kwds is None else dict(ndt_kwds)
+        c = stats.norm.ppf(1.0 - alpha/2.0)
         if t[0] == 0:
             print('Warning: inserting nan for t==0 since logM(t) is undefined.')
             prependNaN = True

@@ -61,8 +61,9 @@ def _power_law_nhpp_fit():
 def _power_law_nhpp_fit_interval():
     from maintkit.poisson_process import power_law_nhpp
     counts, inspections = ds.nhpp_interval_counts()
+    # estimate_ci removed: ci and cov are always computed now
     return power_law_nhpp(0.02, 1.5).fit_interval(
-        counts, inspections, p0=[0.01, 1.2], estimate_ci=True
+        counts, inspections, p0=[0.01, 1.2]
     )
 
 

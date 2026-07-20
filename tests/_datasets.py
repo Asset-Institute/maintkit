@@ -55,6 +55,30 @@ def nhpp_events(n_assets=25, a=0.02, b=1.5, horizon=200.0, seed=404):
     return events, [float(horizon)] * n_assets
 
 
+def nhpp_events_unequal_horizons(a=0.02, b=1.5, horizons=None, seed=808):
+    """Power-law NHPP arrivals with a DIFFERENT horizon per asset.
+
+    The equal-horizon dataset above cannot detect the Crow closed form's
+    failure mode, because that estimator is exact when all truncation times
+    agree. Staggered horizons are also the realistic case: assets in a fleet
+    enter service at different dates.
+    """
+    if horizons is None:
+        horizons = [50.0, 100.0, 150.0, 200.0, 400.0] * 5
+    rng = np.random.default_rng(seed)
+    events = []
+    for horizon in horizons:
+        t, times = 0.0, []
+        while True:
+            u = rng.uniform()
+            t = (-np.log(1.0 - u) / a + t**b) ** (1.0 / b)
+            if t >= horizon:
+                break
+            times.append(float(t))
+        events.append(times)
+    return events, [float(h) for h in horizons]
+
+
 def nhpp_interval_counts(n_assets=15, a=0.02, b=1.5, horizon=200.0,
                          n_inspections=8, seed=505):
     """Counts of arrivals between inspections. Returns (counts, inspections)."""

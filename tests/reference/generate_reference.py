@@ -63,9 +63,24 @@ def main():
             print(f"  {name:<{width}}  ERROR  {result['type']}: {result['message'][:60]}")
 
     REFERENCE_PATH.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-    n_ok = sum(1 for c in record["cases"].values() if c["status"] == "ok")
+    failed = [k for k, v in record["cases"].items() if v["status"] != "ok"]
+    n_ok = len(CASES) - len(failed)
     print(f"\nWrote {REFERENCE_PATH} ({n_ok}/{len(CASES)} cases fitted cleanly).")
-    print("Commit this file before proceeding with changes.")
+
+    if failed:
+        print()
+        print("!" * 70)
+        print("NOT A CLEAN RECORDING -- exiting non-zero.")
+        print(f"Errored and recorded as failures: {failed}")
+        print()
+        print("Recording an error is only correct if the fitter is genuinely")
+        print("expected to raise on this input. Otherwise the harness is calling")
+        print("it wrongly, and the baseline now pins a broken call rather than")
+        print("the behaviour you meant to capture. Fix and re-run.")
+        print("!" * 70)
+        return 1
+
+    print("Commit this file alongside the change that made it necessary.")
     return 0
 
 
