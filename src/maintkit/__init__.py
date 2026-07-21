@@ -3,11 +3,11 @@
 Public API groups:
 
 * Failure-time distributions with censoring-aware MLE
-  (``expdist``, ``weibull``, ``reliability_from_hazard``).
+  (``Exponential``, ``Weibull``, ``ReliabilityFromHazard``).
 * Recurrent-event (Poisson process) models
-  (``poisson_process``, ``power_law_nhpp``).
-* Imperfect maintenance models (``imperfect_pm_minimal_cm``).
-* Maintenance optimization (``interval_replacement``).
+  (``PoissonProcess``, ``PowerLawNHPP``).
+* Imperfect maintenance models (``ProportionalAgeReduction``).
+* Maintenance optimization (``IntervalReplacement``).
 * Nonparametric estimators and probability plotting
   (``ecdf``, ``kaplan_meier``, ``empirical_mean_cumulative_function``,
   ``weibull_probability_plot``).
@@ -15,19 +15,15 @@ Public API groups:
 """
 
 from maintkit.distributions import (
-    reliability_distribution,
-    reliability_distribution_frozen,
-    reliability_from_hazard,
-    expdist,
-    weibull,
+    ReliabilityDistribution,
+    ReliabilityDistributionFrozen,
+    ReliabilityFromHazard,
+    Exponential,
+    Weibull,
 )
-# Only power_law_nhpp is re-exported. Exporting the base class too would
-# bind the name `maintkit.poisson_process` to the class and shadow the
-# module of the same name, so `import maintkit.poisson_process as rp`
-# would hand back the class. Import the base class from the submodule.
-from maintkit.poisson_process import power_law_nhpp
-from maintkit.imperfect_maintenance import imperfect_pm_minimal_cm
-from maintkit.maintenance_optimization import interval_replacement
+from maintkit.poisson_process import PoissonProcess, PowerLawNHPP
+from maintkit.imperfect_maintenance import ProportionalAgeReduction
+from maintkit.maintenance_optimization import IntervalReplacement
 from maintkit.probability_plotting import (
     ecdf,
     kaplan_meier,
@@ -49,14 +45,15 @@ from maintkit.transforms import Transform, Identity, Log, Logit, Composite
 __version__ = "0.1.0"
 
 __all__ = [
-    "reliability_distribution",
-    "reliability_distribution_frozen",
-    "reliability_from_hazard",
-    "expdist",
-    "weibull",
-    "power_law_nhpp",
-    "imperfect_pm_minimal_cm",
-    "interval_replacement",
+    "ReliabilityDistribution",
+    "ReliabilityDistributionFrozen",
+    "ReliabilityFromHazard",
+    "Exponential",
+    "Weibull",
+    "PoissonProcess",
+    "PowerLawNHPP",
+    "ProportionalAgeReduction",
+    "IntervalReplacement",
     "ecdf",
     "kaplan_meier",
     "empirical_mean_cumulative_function",

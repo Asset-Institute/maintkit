@@ -12,7 +12,7 @@ import numdifftools as ndt
 import numpy as np
 import pytest
 
-from maintkit.poisson_process import power_law_nhpp
+from maintkit.poisson_process import PowerLawNHPP
 from tests import _datasets as ds
 
 
@@ -23,7 +23,7 @@ def data():
 
 @pytest.fixture(scope="module")
 def model():
-    return power_law_nhpp(0.02, 1.5)
+    return PowerLawNHPP(0.02, 1.5)
 
 
 def _numeric_log(model, events, trunc, p):

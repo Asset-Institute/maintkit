@@ -1,13 +1,9 @@
 import numpy as np
 from maintkit.inference import fit_mle, result_at
 from maintkit.transforms import Composite, Log, Logit
-# Import the class directly rather than `import maintkit.poisson_process as rpp`.
-# The module and the class share the name `poisson_process`, so the package
-# __init__ re-binds the attribute `maintkit.poisson_process` to the *class*,
-# and `import ... as rpp` would then resolve to the class, not the module.
-from maintkit.poisson_process import power_law_nhpp
+from maintkit.poisson_process import PowerLawNHPP
 
-class imperfect_pm_minimal_cm:
+class ProportionalAgeReduction:
     """Power-law NHPP with proportional age reduction at each PM.
 
     Failures receive minimal repair; each PM sets the age clock back by
@@ -29,11 +25,11 @@ class imperfect_pm_minimal_cm:
     parameter_names = ("a", "b", "rho")
 
     def __init__(self,a,b,rho):
-        self.baseline_model = power_law_nhpp(a,b)
+        self.baseline_model = PowerLawNHPP(a,b)
         self.repair_factor = self._check_repair_factor(rho)
 
     def set_parameters(self,a,b,r):
-        self.baseline_model = power_law_nhpp(a,b)
+        self.baseline_model = PowerLawNHPP(a,b)
         self.repair_factor = self._check_repair_factor(r)
 
     @staticmethod

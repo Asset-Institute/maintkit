@@ -66,7 +66,7 @@
       ],
       "status": "ok"
     },
-    "expdist.fit": {
+    "Exponential.fit": {
       "n_outputs": 3,
       "outputs": [
         [
@@ -86,7 +86,7 @@
       ],
       "status": "ok"
     },
-    "expdist.fit_censored": {
+    "Exponential.fit_censored": {
       "n_outputs": 3,
       "outputs": [
         [
@@ -106,7 +106,7 @@
       ],
       "status": "ok"
     },
-    "imperfect_pm_minimal_cm.fit": {
+    "ProportionalAgeReduction.fit": {
       "n_outputs": 3,
       "outputs": [
         [
@@ -148,7 +148,7 @@
       ],
       "status": "ok"
     },
-    "poisson_process.fit": {
+    "PoissonProcess.fit": {
       "n_outputs": 3,
       "outputs": [
         [
@@ -178,7 +178,7 @@
       ],
       "status": "ok"
     },
-    "power_law_nhpp.fit": {
+    "PowerLawNHPP.fit": {
       "n_outputs": 3,
       "outputs": [
         [
@@ -208,7 +208,7 @@
       ],
       "status": "ok"
     },
-    "power_law_nhpp.fit_interval": {
+    "PowerLawNHPP.fit_interval": {
       "n_outputs": 3,
       "outputs": [
         [
@@ -238,7 +238,7 @@
       ],
       "status": "ok"
     },
-    "weibull.fit": {
+    "Weibull.fit": {
       "n_outputs": 3,
       "outputs": [
         [
@@ -268,7 +268,7 @@
       ],
       "status": "ok"
     },
-    "weibull.fit_interval": {
+    "Weibull.fit_interval": {
       "n_outputs": 3,
       "outputs": [
         [

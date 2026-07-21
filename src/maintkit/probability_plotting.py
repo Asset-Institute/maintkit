@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numdifftools as ndt
-from maintkit.distributions import weibull,reliability_distribution_frozen
+from maintkit.distributions import Weibull,ReliabilityDistributionFrozen
 
 def ecdf(ti,observed,pos="midpoint",plot=True):
     ti = np.array(ti)
@@ -164,12 +164,12 @@ def empirical_mean_cumulative_function(event_times,suspension_times,plot=True,co
 
 def _check_frozen_weibull(dist):
     """Both plotting helpers need a frozen Weibull and nothing else."""
-    if not isinstance(dist,reliability_distribution_frozen):
+    if not isinstance(dist,ReliabilityDistributionFrozen):
         raise TypeError(
             "the distribution must be frozen first: call it with its "
-            "parameters, e.g. weibull()(beta, scale=eta)"
+            "parameters, e.g. Weibull()(beta, scale=eta)"
         )
-    if not isinstance(dist.dist,weibull):
+    if not isinstance(dist.dist,Weibull):
         raise TypeError(
             "only the Weibull is supported here, got "
             f"{type(dist.dist).__name__}"

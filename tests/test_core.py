@@ -2,14 +2,14 @@
 import numpy as np
 import scipy.stats as sps
 
-from maintkit.distributions import expdist, weibull
-from maintkit.poisson_process import power_law_nhpp
+from maintkit.distributions import Exponential, Weibull
+from maintkit.poisson_process import PowerLawNHPP
 
 
 def test_expdist_closed_form_matches_analytic():
     rng = np.random.default_rng(1)
     ti = rng.exponential(scale=25.0, size=500)
-    res = expdist().fit(ti, observed="all")
+    res = Exponential().fit(ti, observed="all")
     assert np.isclose(res.params[0], ti.sum() / len(ti))
 
 
@@ -17,7 +17,7 @@ def test_weibull_mle_recovers_parameters():
     beta_true, eta_true = 2.0, 100.0
     rng = np.random.default_rng(2)
     ti = sps.weibull_min.rvs(beta_true, scale=eta_true, size=2000, random_state=rng)
-    res = weibull().fit(ti, p0=[80.0, 1.5])
+    res = Weibull().fit(ti, p0=[80.0, 1.5])
     eta_hat, beta_hat = res.params
     assert abs(eta_hat - eta_true) / eta_true < 0.1
     assert abs(beta_hat - beta_true) / beta_true < 0.1
@@ -28,7 +28,7 @@ def test_weibull_mle_recovers_parameters():
 
 def test_power_law_nhpp_fit_recovers_shape():
     a_true, b_true = 0.02, 1.5
-    m = power_law_nhpp(a_true, b_true)
+    m = PowerLawNHPP(a_true, b_true)
     np.random.seed(3)
     T = 200
     n_assets = 40

@@ -18,59 +18,59 @@ from tests import _datasets as ds
 
 
 def _weibull_fit():
-    from maintkit.distributions import weibull
+    from maintkit.distributions import Weibull
     ti, observed = ds.censored_lifetimes()
-    return weibull().fit(ti, p0=[80.0, 1.5], observed=observed)
+    return Weibull().fit(ti, p0=[80.0, 1.5], observed=observed)
 
 
 def _weibull_fit_interval():
-    from maintkit.distributions import weibull
+    from maintkit.distributions import Weibull
     ti, ins, observed = ds.interval_lifetimes()
-    return weibull().fit_interval(ti, ins, p0=[80.0, 1.5], observed=observed)
+    return Weibull().fit_interval(ti, ins, p0=[80.0, 1.5], observed=observed)
 
 
 def _expdist_fit():
-    from maintkit.distributions import expdist
+    from maintkit.distributions import Exponential
     ti = ds.exponential_lifetimes()
-    return expdist().fit(ti, observed="all")
+    return Exponential().fit(ti, observed="all")
 
 
 def _expdist_fit_censored():
-    from maintkit.distributions import expdist
+    from maintkit.distributions import Exponential
     ti, observed = ds.censored_lifetimes()
-    return expdist().fit(ti, observed=observed)
+    return Exponential().fit(ti, observed=observed)
 
 
 def _poisson_process_fit():
-    from maintkit.poisson_process import power_law_nhpp
+    from maintkit.poisson_process import PowerLawNHPP
     events, truncation = ds.nhpp_events()
-    model = power_law_nhpp(0.02, 1.5)
+    model = PowerLawNHPP(0.02, 1.5)
     # exercise the *base class* generic fitter, not the analytic override
-    from maintkit.poisson_process import poisson_process
-    return poisson_process.fit(
+    from maintkit.poisson_process import PoissonProcess
+    return PoissonProcess.fit(
         model, events, p0=[0.01, 1.2], truncation_times=truncation
     )
 
 
 def _power_law_nhpp_fit():
-    from maintkit.poisson_process import power_law_nhpp
+    from maintkit.poisson_process import PowerLawNHPP
     events, truncation = ds.nhpp_events()
-    return power_law_nhpp(0.02, 1.5).fit(events, truncation_times=truncation)
+    return PowerLawNHPP(0.02, 1.5).fit(events, truncation_times=truncation)
 
 
 def _power_law_nhpp_fit_interval():
-    from maintkit.poisson_process import power_law_nhpp
+    from maintkit.poisson_process import PowerLawNHPP
     counts, inspections = ds.nhpp_interval_counts()
     # estimate_ci removed: ci and cov are always computed now
-    return power_law_nhpp(0.02, 1.5).fit_interval(
+    return PowerLawNHPP(0.02, 1.5).fit_interval(
         counts, inspections, p0=[0.01, 1.2]
     )
 
 
 def _imperfect_maintenance_fit():
-    from maintkit.imperfect_maintenance import imperfect_pm_minimal_cm
+    from maintkit.imperfect_maintenance import ProportionalAgeReduction
     failures, pm_times, truncation_time = ds.imperfect_maintenance_data()
-    return imperfect_pm_minimal_cm(0.02, 1.5, 0.4).fit(
+    return ProportionalAgeReduction(0.02, 1.5, 0.4).fit(
         failures, pm_times, truncation_time
     )
 
@@ -90,14 +90,14 @@ def _rbm_estimate():
 
 
 CASES = {
-    "weibull.fit": _weibull_fit,
-    "weibull.fit_interval": _weibull_fit_interval,
-    "expdist.fit": _expdist_fit,
-    "expdist.fit_censored": _expdist_fit_censored,
-    "poisson_process.fit": _poisson_process_fit,
-    "power_law_nhpp.fit": _power_law_nhpp_fit,
-    "power_law_nhpp.fit_interval": _power_law_nhpp_fit_interval,
-    "imperfect_pm_minimal_cm.fit": _imperfect_maintenance_fit,
+    "Weibull.fit": _weibull_fit,
+    "Weibull.fit_interval": _weibull_fit_interval,
+    "Exponential.fit": _expdist_fit,
+    "Exponential.fit_censored": _expdist_fit_censored,
+    "PoissonProcess.fit": _poisson_process_fit,
+    "PowerLawNHPP.fit": _power_law_nhpp_fit,
+    "PowerLawNHPP.fit_interval": _power_law_nhpp_fit_interval,
+    "ProportionalAgeReduction.fit": _imperfect_maintenance_fit,
     "Wiener.fit": _wiener_estimate,
     "RBM.fit": _rbm_estimate,
 }

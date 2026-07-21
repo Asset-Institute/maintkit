@@ -25,7 +25,7 @@ def _check_list_of_lists(values,name):
         )
 
 
-class poisson_process:
+class PoissonProcess:
 
     #: Transform used when fitting. Both power-law parameters are positive.
     parameter_transform = Log()
@@ -192,7 +192,7 @@ class poisson_process:
         )
 
 
-class power_law_nhpp(poisson_process):
+class PowerLawNHPP(PoissonProcess):
 
     parameter_names = ("a", "b")
 

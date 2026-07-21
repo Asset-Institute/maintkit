@@ -9,10 +9,10 @@ import numdifftools as ndt
 from maintkit.inference import fit_mle, result_from_covariance
 from maintkit.transforms import Identity, Log
 
-class reliability_distribution(stats.rv_continuous):
+class ReliabilityDistribution(stats.rv_continuous):
 
     #: Transform used when fitting. Subclasses override for constrained
-    #: parameters (see weibull, which uses Log for positive eta/beta).
+    #: parameters (see Weibull, which uses Log for positive eta/beta).
     parameter_transform = Identity()
 
     #: Parameter names, used only for FitResult.summary().
@@ -57,7 +57,7 @@ class reliability_distribution(stats.rv_continuous):
             'natural' reproduces the symmetric intervals returned by versions
             before the fitters were consolidated.
         use_analytic_gradient : bool
-            Use the subclass's ``nnlf_gradient`` when it defines one (weibull
+            Use the subclass's ``nnlf_gradient`` when it defines one (Weibull
             does). Set False to fall back to finite differences, e.g. to
             compare against results produced before the score was available.
 
@@ -106,17 +106,29 @@ class reliability_distribution(stats.rv_continuous):
 
 
     def freeze(self, *args, **kwds):
-        return reliability_distribution_frozen(self, *args, **kwds) # freeze using new reliabilty class, otherwise new functions won't be defined (e.g. reliability)
+        return ReliabilityDistributionFrozen(self, *args, **kwds) # freeze using new reliabilty class, otherwise new functions won't be defined (e.g. reliability)
     
 
 # rv_continuous_frozen, not rv_frozen: scipy splits the two, and rv_frozen
 # carries cdf, sf and ppf but not pdf or logpdf. Inheriting from it gives a
 # "distribution" with no density.
-class reliability_distribution_frozen(stats._distn_infrastructure.rv_continuous_frozen):
+class ReliabilityDistributionFrozen(stats._distn_infrastructure.rv_continuous_frozen):
     def __init__(self, dist, *args, **kwds):
+        # Deliberately not super().__init__(). scipy's version rebuilds the
+        # distribution with dist.__class__(**dist._updated_ctor_param()), which
+        # passes only the rv_continuous constructor parameters. Any subclass
+        # needing more than those would fail: ReliabilityFromHazard takes a
+        # hazard function, so the rebuild raises TypeError.
+        #
+        # Keeping the instance we were given means setting the support fields
+        # ourselves. Without them self.a and self.b are missing and anything
+        # relying on them -- support(), interval() -- fails with AttributeError.
         self.args = args
         self.kwds = kwds
         self.dist = dist
+        shapes, _, _ = dist._parse_args(*args, **kwds)
+        self.a, self.b = dist._get_support(*shapes)
+
     def reliability(self,x):
         return self.dist.sf(x,*self.args, **self.kwds)
     def log_reliability(self,x):
@@ -184,11 +196,11 @@ class reliability_distribution_frozen(stats._distn_infrastructure.rv_continuous_
 
         return ax
 
-class reliability_from_hazard(reliability_distribution):
+class ReliabilityFromHazard(ReliabilityDistribution):
     def __init__(self,h,*args,**kwargs):
         self.hazard = h
         self.cumulative_hazard = None
-        self = reliability_distribution.__init__(self,*args,**kwargs)
+        self = ReliabilityDistribution.__init__(self,*args,**kwargs)
     
     def integrate_hazard(self,t,verb=False):
         if verb:
@@ -215,7 +227,7 @@ class reliability_from_hazard(reliability_distribution):
 
         return 1-np.exp(-self.cumulative_hazard[:,1])
 
-class expdist(reliability_distribution):
+class Exponential(ReliabilityDistribution):
     r"""Exponential distribution, parameterised by the mean.
 
     The single parameter is the **mean** :math:`\theta = \mathbb{E}[T]`, which
@@ -227,11 +239,11 @@ class expdist(reliability_distribution):
     speak the same parameter. A fitted value drops straight into a frozen
     distribution::
 
-        res  = expdist().fit(ti, observed=observed)
-        dist = expdist()(scale=res.params[0])
+        res  = Exponential().fit(ti, observed=observed)
+        dist = Exponential()(scale=res.params[0])
         dist.reliability(t)
 
-    It is also consistent with :class:`weibull`, whose ``eta`` is likewise a
+    It is also consistent with :class:`Weibull`, whose ``eta`` is likewise a
     scale.
     """
 
@@ -326,7 +338,7 @@ class expdist(reliability_distribution):
             ci_method=ci_method,
         )
 
-class weibull(reliability_distribution):
+class Weibull(ReliabilityDistribution):
 
     # eta (scale) and beta (shape) are both strictly positive, so fit on the
     # log scale.

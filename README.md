@@ -27,14 +27,14 @@ import maintkit as mk
 # Weibull MLE with right-censoring
 ti = np.array([12., 45., 88., 90., 110., 130.])
 observed = np.array([1, 1, 1, 0, 1, 0])          # 0 = right-censored
-p_hat, p_ci, p_cov = mk.weibull().fit(ti, p0=[80., 1.5], observed=observed)
+p_hat, p_ci, p_cov = mk.Weibull().fit(ti, p0=[80., 1.5], observed=observed)
 eta_hat, beta_hat = p_hat
 
 # Nonparametric CDF estimate (Kaplan-Meier)
 t, F, lb, ub = mk.kaplan_meier(ti, observed, plot=False)
 
 # Recurrent events: fit a power-law NHPP across several assets
-model = mk.power_law_nhpp(a=0.02, b=1.5)
+model = mk.PowerLawNHPP(a=0.02, b=1.5)
 event_times = [[10., 40., 95.], [22., 60.]]       # one list per asset
 p_hat, p_ci, p_cov = model.fit(event_times, truncation_times=[100., 100.])
 ```
@@ -43,11 +43,11 @@ p_hat, p_ci, p_cov = model.fit(event_times, truncation_times=[100., 100.])
 
 ```
 src/maintkit/
-    distributions.py            # expdist, weibull, reliability_from_hazard + frozen wrappers
-    poisson_process.py          # poisson_process, power_law_nhpp
-    imperfect_maintenance.py    # imperfect_pm_minimal_cm (proportional age reduction)
-    maintenance_optimization.py # interval_replacement
-    probability_plotting.py     # ecdf, kaplan_meier, empirical_mean_cumulative_function, weibull plots
+    distributions.py            # Exponential, Weibull, ReliabilityFromHazard + frozen wrappers
+    PoissonProcess.py          # PoissonProcess, PowerLawNHPP
+    imperfect_maintenance.py    # ProportionalAgeReduction (proportional age reduction)
+    maintenance_optimization.py # IntervalReplacement
+    probability_plotting.py     # ecdf, kaplan_meier, empirical_mean_cumulative_function, Weibull plots
     wiener.py                   # Wiener, RBM (regulated Brownian motion) degradation models
     utilities.py                # parameter transforms, helpers
 tests/                          # pytest regression + core tests
@@ -83,7 +83,7 @@ in place, so re-run the notebook if you want to keep viewing results locally.
 
 ## Notes
 
-- The public API is re-exported from the package root, so `mk.weibull`,
+- The public API is re-exported from the package root, so `mk.Weibull`,
   `mk.kaplan_meier`, etc. all work directly.
 - The previous `weiner` (misspelled) class is kept as an alias of `Wiener`
   for backward compatibility.

@@ -1,11 +1,11 @@
 """Verify what the distribution-fitter migration did and did not change.
 
-``reliability_distribution.fit`` / ``fit_interval`` now delegate to
+``ReliabilityDistribution.fit`` / ``fit_interval`` now delegate to
 ``maintkit.inference.fit_mle``. The intended effect is narrow:
 
 * estimates and covariance are materially unchanged -- same objective, same
   optimiser, and the delta-method covariance reproduces the legacy convention.
-  They move in the last few digits because weibull now supplies an analytic
+  They move in the last few digits because Weibull now supplies an analytic
   score; see the tolerance note below.
 * the confidence-interval convention changes, from a symmetric interval on the
   natural scale to one built in the unconstrained space and mapped back.
@@ -19,7 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from maintkit.distributions import weibull
+from maintkit.distributions import Weibull
 from maintkit.inference import FitResult
 from tests import _datasets as ds
 
@@ -32,7 +32,7 @@ from tests import _datasets as ds
 # new implementation against itself. A "before/after" test cannot take its
 # "before" from a file that gets rewritten.
 #
-# Captured from weibull().fit(ds.censored_lifetimes(), p0=[80., 1.5]) as
+# Captured from Weibull().fit(ds.censored_lifetimes(), p0=[80., 1.5]) as
 # implemented before the fitters were consolidated: symmetric CIs on the
 # natural scale using a hardcoded 1.96, and finite-difference gradients.
 # --------------------------------------------------------------------------
@@ -69,12 +69,12 @@ def _score_log_space(dist, params, ti, observed):
 @pytest.fixture(scope="module")
 def weibull_fit():
     ti, observed = ds.censored_lifetimes()
-    return weibull().fit(ti, p0=[80.0, 1.5], observed=observed)
+    return Weibull().fit(ti, p0=[80.0, 1.5], observed=observed)
 
 
 # ------------------------------------------------------- what must not move --
 # Tolerances: the legacy values above were produced with finite-difference
-# gradients. weibull now supplies an analytic score, so BFGS
+# gradients. Weibull now supplies an analytic score, so BFGS
 # stops at a slightly different -- and demonstrably better -- point:
 #
 #   finite difference : |score|_inf = 1.04e-05,  scale-equation residual +5.5e-06
@@ -109,7 +109,7 @@ def test_analytic_gradient_finds_a_better_optimum(weibull_fit):
     the dynamic range to tell them apart, so that is what is used.
     """
     ti, observed = ds.censored_lifetimes()
-    dist = weibull()
+    dist = Weibull()
     new_score = _score_log_space(dist, weibull_fit.params, ti, observed)
     old_score = _score_log_space(dist, LEGACY_PARAMS, ti, observed)
     assert new_score < old_score, (
@@ -132,7 +132,7 @@ def test_natural_ci_reproduces_legacy_interval():
     tolerance below is set to accommodate exactly that and nothing larger.
     """
     ti, observed = ds.censored_lifetimes()
-    res = weibull().fit(ti, p0=[80.0, 1.5], observed=observed, ci_method="natural")
+    res = Weibull().fit(ti, p0=[80.0, 1.5], observed=observed, ci_method="natural")
     np.testing.assert_allclose(res.ci, LEGACY_CI, rtol=1e-4)
 
 
@@ -179,7 +179,7 @@ def test_optimiser_convergence_flag_is_reported(weibull_fit):
 def test_fit_interval_now_returns_covariance():
     """fit_interval previously returned only the estimate and CI; cov is new."""
     ti, ins, observed = ds.interval_lifetimes()
-    res = weibull().fit_interval(ti, ins, p0=[80.0, 1.5], observed=observed)
+    res = Weibull().fit_interval(ti, ins, p0=[80.0, 1.5], observed=observed)
     assert isinstance(res, FitResult)
     assert res.cov.shape == (2, 2)
     assert np.all(np.diag(res.cov) > 0)
@@ -188,8 +188,8 @@ def test_fit_interval_now_returns_covariance():
 
 def test_alpha_is_honoured():
     ti, observed = ds.censored_lifetimes()
-    narrow = weibull().fit(ti, p0=[80.0, 1.5], observed=observed, alpha=0.05)
-    wide = weibull().fit(ti, p0=[80.0, 1.5], observed=observed, alpha=0.01)
+    narrow = Weibull().fit(ti, p0=[80.0, 1.5], observed=observed, alpha=0.05)
+    wide = Weibull().fit(ti, p0=[80.0, 1.5], observed=observed, alpha=0.01)
     assert np.all(wide.ci[:, 0] < narrow.ci[:, 0])
     assert np.all(wide.ci[:, 1] > narrow.ci[:, 1])
 
@@ -206,7 +206,7 @@ def test_analytic_score_matches_numerical_gradient(p):
     """The closed-form score must agree with numerical differentiation."""
     import numdifftools as ndt
     ti, observed = ds.censored_lifetimes()
-    dist = weibull()
+    dist = Weibull()
     analytic = dist.nnlf_gradient(p, ti, observed)
     numeric = ndt.Gradient(lambda q: dist.nnlf(q, ti, observed))(np.asarray(p, float))
     np.testing.assert_allclose(analytic, numeric, rtol=1e-6, atol=1e-6)
@@ -215,7 +215,7 @@ def test_analytic_score_matches_numerical_gradient(p):
 def test_score_vanishes_at_the_mle(weibull_fit):
     """A correct score is ~0 at the optimum -- independent evidence of convergence."""
     ti, observed = ds.censored_lifetimes()
-    g = weibull().nnlf_gradient(weibull_fit.params, ti, observed)
+    g = Weibull().nnlf_gradient(weibull_fit.params, ti, observed)
     scale = abs(weibull_fit.nnlf)
     assert np.all(np.abs(g) / scale < 1e-6), f"score {g} too large relative to nnlf {scale}"
 
@@ -231,9 +231,9 @@ def test_score_reproduces_textbook_mle_equations(weibull_fit):
 def test_analytic_and_numeric_gradients_give_same_estimate():
     """Supplying the score changes how the optimiser gets there, not where."""
     ti, observed = ds.censored_lifetimes()
-    with_score = weibull().fit(ti, p0=[80.0, 1.5], observed=observed,
+    with_score = Weibull().fit(ti, p0=[80.0, 1.5], observed=observed,
                                use_analytic_gradient=True)
-    without = weibull().fit(ti, p0=[80.0, 1.5], observed=observed,
+    without = Weibull().fit(ti, p0=[80.0, 1.5], observed=observed,
                             use_analytic_gradient=False)
     np.testing.assert_allclose(with_score.params, without.params, rtol=1e-5)
     np.testing.assert_allclose(with_score.cov, without.cov, rtol=1e-4)

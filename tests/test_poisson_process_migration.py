@@ -1,6 +1,6 @@
 """Verify what the Poisson-process migration did and did not change.
 
-``poisson_process.fit``, ``power_law_nhpp.fit`` and ``fit_interval`` now
+``PoissonProcess.fit``, ``PowerLawNHPP.fit`` and ``fit_interval`` now
 delegate to ``maintkit.inference``. Unlike the distribution fitters, this
 module already built its confidence intervals on the log scale, so the CI
 convention does not change here -- only the critical value, from a hardcoded
@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 
 from maintkit.inference import FitResult
-from maintkit.poisson_process import poisson_process, power_law_nhpp
+from maintkit.poisson_process import PoissonProcess, PowerLawNHPP
 from tests import _datasets as ds
 
 # --------------------------------------------------------------------------
@@ -59,13 +59,13 @@ def counts():
     return ds.nhpp_interval_counts()
 
 
-# ----------------------------------------------------- poisson_process.fit --
+# ----------------------------------------------------- PoissonProcess.fit --
 @pytest.fixture(scope="module")
 def base_fit(data):
     events, trunc = data
-    model = power_law_nhpp(0.02, 1.5)
+    model = PowerLawNHPP(0.02, 1.5)
     # exercise the generic base-class fitter, not the analytic override
-    return poisson_process.fit(model, events, p0=[0.01, 1.2], truncation_times=trunc)
+    return PoissonProcess.fit(model, events, p0=[0.01, 1.2], truncation_times=trunc)
 
 
 def test_base_fit_returns_fitresult(base_fit):
@@ -74,7 +74,7 @@ def test_base_fit_returns_fitresult(base_fit):
     assert base_fit.names == ("a", "b")
 
 
-# The base fitter now uses power_law_nhpp's analytic score, so BFGS stops at a
+# The base fitter now uses PowerLawNHPP's analytic score, so BFGS stops at a
 # different -- and better -- point than the finite-difference run that produced
 # LEGACY_PP_FIT_PARAMS. Measured against the exact profile MLE:
 #
@@ -96,12 +96,12 @@ def test_base_fit_estimates_unchanged(base_fit):
 def test_base_fit_is_closer_to_the_mle_than_legacy(base_fit, data):
     """The estimate moved because the optimiser got better, not because it drifted.
 
-    power_law_nhpp.fit solves the score equation directly, so its result is the
+    PowerLawNHPP.fit solves the score equation directly, so its result is the
     reference point. The numerically-optimised base fit should now sit nearer to
     it than the recorded finite-difference run did.
     """
     events, trunc = data
-    exact = power_law_nhpp(0.02, 1.5).fit(events, truncation_times=trunc).params
+    exact = PowerLawNHPP(0.02, 1.5).fit(events, truncation_times=trunc).params
     current = np.abs(base_fit.params / exact - 1).max()
     legacy = np.abs(LEGACY_PP_FIT_PARAMS / exact - 1).max()
     assert current < legacy, (
@@ -117,7 +117,7 @@ def test_base_fit_covariance_unchanged(base_fit):
 def test_generic_optimiser_agrees_with_the_closed_form(base_fit, data):
     """Two independent routes to the same estimate.
 
-    The base class optimises numerically; power_law_nhpp.fit solves in closed
+    The base class optimises numerically; PowerLawNHPP.fit solves in closed
     form. Agreement to ~6 significant figures checks both against each other.
 
     This also settles the ConvergenceWarning the base fit emits: BFGS reports
@@ -127,15 +127,15 @@ def test_generic_optimiser_agrees_with_the_closed_form(base_fit, data):
     analytic MLE is the evidence that the stopping point is sound.
     """
     events, trunc = data
-    analytic = power_law_nhpp(0.02, 1.5).fit(events, truncation_times=trunc)
+    analytic = PowerLawNHPP(0.02, 1.5).fit(events, truncation_times=trunc)
     np.testing.assert_allclose(base_fit.params, analytic.params, rtol=1e-5)
 
 
-# ---------------------------------------------------- power_law_nhpp.fit ---
+# ---------------------------------------------------- PowerLawNHPP.fit ---
 @pytest.fixture(scope="module")
 def plp_fit(data):
     events, trunc = data
-    return power_law_nhpp(0.02, 1.5).fit(events, truncation_times=trunc)
+    return PowerLawNHPP(0.02, 1.5).fit(events, truncation_times=trunc)
 
 
 def test_equal_horizon_estimate_unchanged(plp_fit):
@@ -167,7 +167,7 @@ def test_ci_brackets_the_estimate(plp_fit):
 @pytest.fixture(scope="module")
 def interval_fit(counts):
     ni, ins = counts
-    return power_law_nhpp(0.02, 1.5).fit_interval(ni, ins, p0=[0.01, 1.2])
+    return PowerLawNHPP(0.02, 1.5).fit_interval(ni, ins, p0=[0.01, 1.2])
 
 
 def test_interval_fit_estimates_unchanged(interval_fit):
@@ -199,7 +199,7 @@ def test_fit_interval_has_no_estimate_ci_flag(counts):
     """The escape hatch is gone; ci and cov are always computed."""
     ni, ins = counts
     with pytest.raises(TypeError):
-        power_law_nhpp(0.02, 1.5).fit_interval(
+        PowerLawNHPP(0.02, 1.5).fit_interval(
             ni, ins, p0=[0.01, 1.2], estimate_ci=False
         )
 
@@ -207,14 +207,14 @@ def test_fit_interval_has_no_estimate_ci_flag(counts):
 # ------------------------------------------------------------- validation --
 def test_event_times_type_error_is_raised_not_asserted():
     """Assertions vanish under python -O; these checks must not."""
-    model = power_law_nhpp(0.02, 1.5)
+    model = PowerLawNHPP(0.02, 1.5)
     with pytest.raises(TypeError, match="list of lists"):
         model.fit([1.0, 2.0, 3.0], truncation_times=[10.0])
 
 
 def test_invalid_truncation_time_raises(data):
     events, _ = data
-    model = power_law_nhpp(0.02, 1.5)
+    model = PowerLawNHPP(0.02, 1.5)
     bad = [1.0] * len(events)          # earlier than the observed events
     with pytest.raises(ValueError, match="Invalid truncation time"):
         model.fit(events, truncation_times=bad)
@@ -237,7 +237,7 @@ def test_profile_solve_reduces_to_the_crow_form_for_equal_horizons(data):
     crow_b = n_events / denominator
     crow_a = n_events / np.sum(np.asarray(trunc, float) ** crow_b)
 
-    res = power_law_nhpp(0.02, 1.5).fit(events, truncation_times=trunc)
+    res = PowerLawNHPP(0.02, 1.5).fit(events, truncation_times=trunc)
     np.testing.assert_allclose(res.params, [crow_a, crow_b], rtol=1e-8)
 
 
@@ -247,19 +247,19 @@ def test_profile_score_does_not_overflow_at_large_shape(data):
     _, trunc = data
     tau = np.asarray(trunc, float)
     for b in [1.0, 50.0, 500.0, 5000.0]:
-        val = power_law_nhpp._profile_score(b, 100, 400.0, tau)
+        val = PowerLawNHPP._profile_score(b, 100, 400.0, tau)
         assert np.isfinite(val), f"profile score not finite at b={b}"
 
 
 def test_fit_raises_when_no_events_observed():
-    model = power_law_nhpp(0.02, 1.5)
+    model = PowerLawNHPP(0.02, 1.5)
     with pytest.raises(ValueError, match="no events observed"):
         model.fit([[], []], truncation_times=[10.0, 10.0])
 
 
 def test_fit_raises_when_shape_is_unidentifiable():
     """Every event at its truncation time: the root runs off to infinity."""
-    model = power_law_nhpp(0.02, 1.5)
+    model = PowerLawNHPP(0.02, 1.5)
     with pytest.raises(ValueError, match="cannot identify a shape"):
         model.fit([[9.999999, 9.9999995]], truncation_times=[10.0])
 
@@ -267,7 +267,7 @@ def test_fit_raises_when_shape_is_unidentifiable():
 def test_numpy_truncation_times_do_not_raise(data):
     """`truncation_times != None` used to blow up on an ndarray."""
     events, trunc = data
-    model = power_law_nhpp(0.02, 1.5)
+    model = PowerLawNHPP(0.02, 1.5)
     res = model.fit(events, truncation_times=np.asarray(trunc, dtype=float))
     assert np.all(np.isfinite(res.params))
 
@@ -283,7 +283,7 @@ def test_fit_is_the_mle_for_unequal_truncation_times():
     gradient cannot be a maximum.
     """
     events, trunc = ds.nhpp_events_unequal_horizons()
-    model = power_law_nhpp(0.02, 1.5)
+    model = PowerLawNHPP(0.02, 1.5)
     res = model.fit(events, truncation_times=trunc)
     score = model.nnlf_gradient(res.params, events, trunc)
     scale = abs(model.nnlf(res.params, events, trunc))

@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from maintkit.imperfect_maintenance import imperfect_pm_minimal_cm
+from maintkit.imperfect_maintenance import ProportionalAgeReduction
 from maintkit.inference import FitResult
 from tests import _datasets as ds
 
@@ -20,7 +20,7 @@ T = 300.0                                          # observation ends here
 
 @pytest.fixture(scope="module")
 def model():
-    return imperfect_pm_minimal_cm(A, B, RHO)
+    return ProportionalAgeReduction(A, B, RHO)
 
 
 def _numerical_integral(t, pm, a=A, b=B, rho=RHO, n=200_000):
@@ -97,7 +97,7 @@ def test_agrees_with_the_likelihood(model):
 
 def test_reduces_to_the_baseline_when_rho_is_zero():
     """With no age reduction the result is just the power-law cumulative."""
-    m = imperfect_pm_minimal_cm(A, B, 0.0)
+    m = ProportionalAgeReduction(A, B, 0.0)
     t = np.linspace(0.0, 300.0, 500)
     np.testing.assert_allclose(m.cumulative_intensity(t, PM, T), A * t**B, rtol=1e-12)
 
@@ -123,7 +123,7 @@ def data():
 @pytest.fixture(scope="module")
 def fit_result(data):
     failures, pm, trunc = data
-    return imperfect_pm_minimal_cm(A, B, RHO).fit(failures, pm, trunc)
+    return ProportionalAgeReduction(A, B, RHO).fit(failures, pm, trunc)
 
 
 def test_fit_returns_fitresult(fit_result):
@@ -161,7 +161,7 @@ def test_fit_rho_ci_stays_inside_the_unit_interval(fit_result):
 def test_fit_a_is_at_its_conditional_maximum(fit_result, data):
     """a is concentrated out, so a = N / total_exposure must hold exactly."""
     failures, pm, trunc = data
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     _, edges = m._prepare(failures, pm, trunc)
     a_hat, b_hat, rho_hat = fit_result.params
     expected = len(failures) / m._total_exposure(b_hat, rho_hat, edges)
@@ -170,7 +170,7 @@ def test_fit_a_is_at_its_conditional_maximum(fit_result, data):
 
 def test_p0_takes_two_entries_not_three(data):
     failures, pm, trunc = data
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     with pytest.raises(ValueError, match="two"):
         m.fit(failures, pm, trunc, p0=[0.02, 1.5, 0.4])
 
@@ -178,7 +178,7 @@ def test_p0_takes_two_entries_not_three(data):
 def test_p0_changes_the_start_not_the_answer(data, fit_result):
     """A different starting point should reach the same optimum."""
     failures, pm, trunc = data
-    other = imperfect_pm_minimal_cm(A, B, RHO).fit(
+    other = ProportionalAgeReduction(A, B, RHO).fit(
         failures, pm, trunc, p0=[2.0, 0.3]
     )
     np.testing.assert_allclose(other.params, fit_result.params, rtol=1e-4)
@@ -186,7 +186,7 @@ def test_p0_changes_the_start_not_the_answer(data, fit_result):
 
 def test_alpha_widens_the_interval(data):
     failures, pm, trunc = data
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     narrow = m.fit(failures, pm, trunc, alpha=0.05)
     wide = m.fit(failures, pm, trunc, alpha=0.01)
     assert np.all(wide.ci[:, 0] < narrow.ci[:, 0])
@@ -206,7 +206,7 @@ def test_promoting_one_asset_leaves_the_likelihood_untouched(data):
     single-asset case is not merely close after the change, it is identical.
     """
     failures, pm, trunc = data
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     for p in [(0.02, 1.5, 0.4), (0.0206, 1.5283, 0.6377), (0.5, 0.8, 0.05)]:
         flat = m.nnlf(p, failures, pm, trunc)
         listed = m.nnlf(p, [failures], [pm], [trunc])
@@ -216,7 +216,7 @@ def test_promoting_one_asset_leaves_the_likelihood_untouched(data):
 def test_two_copies_of_one_asset_double_the_likelihood(data):
     """Assets are independent given the parameters, so -l is additive."""
     failures, pm, trunc = data
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     p = (0.02, 1.5, 0.4)
     one = m.nnlf(p, [failures], [pm], [trunc])
     two = m.nnlf(p, [failures, failures], [pm, pm], [trunc, trunc])
@@ -226,7 +226,7 @@ def test_two_copies_of_one_asset_double_the_likelihood(data):
 def test_duplicated_asset_gives_the_same_estimates(data, fit_result):
     """Twice the data at the same parameters: estimates hold, errors shrink."""
     failures, pm, trunc = data
-    doubled = imperfect_pm_minimal_cm(A, B, RHO).fit(
+    doubled = ProportionalAgeReduction(A, B, RHO).fit(
         [failures, failures], [pm, pm], [trunc, trunc]
     )
     np.testing.assert_allclose(doubled.params, fit_result.params, rtol=1e-5)
@@ -236,7 +236,7 @@ def test_duplicated_asset_gives_the_same_estimates(data, fit_result):
 
 def test_fleet_with_ragged_schedules_fits(fleet):
     failures, pm, trunc = fleet
-    result = imperfect_pm_minimal_cm(A, B, RHO).fit(failures, pm, trunc)
+    result = ProportionalAgeReduction(A, B, RHO).fit(failures, pm, trunc)
     assert np.all(np.isfinite(result.params))
     assert np.all(result.params[:2] > 0)
     assert 0.0 < result.params[2] < 1.0
@@ -247,7 +247,7 @@ def test_fleet_recovers_the_generating_parameters(fleet):
     """Loose bounds -- this checks the fleet likelihood is assembled right,
     not that 226 failures pin three parameters precisely."""
     failures, pm, trunc = fleet
-    result = imperfect_pm_minimal_cm(A, B, RHO).fit(failures, pm, trunc)
+    result = ProportionalAgeReduction(A, B, RHO).fit(failures, pm, trunc)
     a_hat, b_hat, rho_hat = result.params
     assert 0.005 < a_hat < 0.08
     assert 1.0 < b_hat < 2.2
@@ -258,7 +258,7 @@ def test_asset_with_no_failures_still_counts(fleet):
     """It contributes exposure but no events, so dropping it moves the fit."""
     failures, pm, trunc = fleet
     assert not failures[4], "fixture no longer has a failure-free asset"
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     p = (0.02, 1.5, 0.4)
     with_it = m.nnlf(p, failures, pm, trunc)
     without = m.nnlf(p, failures[:4], pm[:4], trunc[:4])
@@ -268,13 +268,13 @@ def test_asset_with_no_failures_still_counts(fleet):
 def test_asset_with_no_maintenance_is_allowed(fleet):
     failures, pm, trunc = fleet
     assert not pm[2], "fixture no longer has an unmaintained asset"
-    result = imperfect_pm_minimal_cm(A, B, RHO).fit(failures, pm, trunc)
+    result = ProportionalAgeReduction(A, B, RHO).fit(failures, pm, trunc)
     assert np.all(np.isfinite(result.params))
 
 
 def test_scalar_truncation_time_applies_to_every_asset(data):
     failures, pm, trunc = data
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     p = (0.02, 1.5, 0.4)
     scalar = m.nnlf(p, [failures, failures], [pm, pm], trunc)
     listed = m.nnlf(p, [failures, failures], [pm, pm], [trunc, trunc])
@@ -283,14 +283,14 @@ def test_scalar_truncation_time_applies_to_every_asset(data):
 
 def test_asset_counts_must_agree(data):
     failures, pm, trunc = data
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     with pytest.raises(ValueError, match="own schedule"):
         m.fit([failures, failures], [pm], trunc)
 
 
 def test_wrong_number_of_truncation_times_is_rejected(data):
     failures, pm, trunc = data
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     with pytest.raises(ValueError, match="one per asset"):
         m.fit([failures, failures], [pm, pm], [trunc, trunc, trunc])
 
@@ -298,14 +298,14 @@ def test_wrong_number_of_truncation_times_is_rejected(data):
 def test_mixing_numbers_and_sequences_is_rejected(data):
     """[array, 50.0] is a typo, not a fleet. Say so rather than guessing."""
     failures, pm, trunc = data
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     with pytest.raises(TypeError, match="mixes numbers and sequences"):
         m.fit(failures, [pm, 50.0], trunc)
 
 
 def test_fleet_with_no_failures_anywhere_is_rejected(data):
     failures, pm, trunc = data
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     with pytest.raises(ValueError, match="no failures observed"):
         m.fit([[], []], [pm, pm], trunc)
 
@@ -313,7 +313,7 @@ def test_fleet_with_no_failures_anywhere_is_rejected(data):
 def test_validation_names_the_offending_asset(data):
     """With a fleet, "a failure is out of range" is not enough to act on."""
     failures, pm, trunc = data
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     late = list(failures) + [trunc + 10.0]
     with pytest.raises(ValueError, match="asset 1"):
         m.fit([failures, late], [pm, pm], trunc)
@@ -323,7 +323,7 @@ def test_validation_names_the_offending_asset(data):
 @pytest.mark.parametrize("rho", [0.0, 0.5, 1.0])
 def test_repair_factor_endpoints_are_valid_models(rho):
     """0 is no age reduction, 1 is as-good-as-new. Both are meaningful."""
-    m = imperfect_pm_minimal_cm(A, B, rho)
+    m = ProportionalAgeReduction(A, B, rho)
     assert m.repair_factor == rho
 
 
@@ -331,11 +331,11 @@ def test_repair_factor_endpoints_are_valid_models(rho):
 def test_repair_factor_outside_the_unit_interval_raises(rho):
     """Raises rather than asserts: python -O strips assert statements."""
     with pytest.raises(ValueError, match=r"must be in \[0, 1\]"):
-        imperfect_pm_minimal_cm(A, B, rho)
+        ProportionalAgeReduction(A, B, rho)
 
 
 def test_set_parameters_checks_the_repair_factor_too():
-    m = imperfect_pm_minimal_cm(A, B, RHO)
+    m = ProportionalAgeReduction(A, B, RHO)
     with pytest.raises(ValueError, match=r"must be in \[0, 1\]"):
         m.set_parameters(A, B, 2.0)
 

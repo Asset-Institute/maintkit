@@ -260,14 +260,17 @@ def test_quantile_band_brackets_the_median():
 
 
 def test_quantile_band_inverts_the_cdf():
-    """L and U must actually solve F(x) = alpha and F(x) = 1 - alpha."""
+    """L and U must solve F(x) = alpha/2 and F(x) = 1 - alpha/2.
+
+    alpha is a significance level, so the band is split between the two tails.
+    """
     model = RBM(0.5, 1.0)
     t = np.array([0.5, 1.0, 2.0])
-    alpha = 0.025
+    alpha = 0.05
     L, U = model.get_upper_lower(t, 0.0, alpha=alpha)
     for ti, lo, hi in zip(t, L, U):
-        assert model.transition_distribution(lo, ti, 0.0, type="cdf") == pytest.approx(alpha, abs=1e-6)
-        assert model.transition_distribution(hi, ti, 0.0, type="cdf") == pytest.approx(1 - alpha, abs=1e-6)
+        assert model.transition_distribution(lo, ti, 0.0, type="cdf") == pytest.approx(alpha/2, abs=1e-6)
+        assert model.transition_distribution(hi, ti, 0.0, type="cdf") == pytest.approx(1 - alpha/2, abs=1e-6)
 
 
 def test_quantile_band_returns_scalars_not_arrays():

@@ -2,7 +2,7 @@ import numpy as np
 import maintkit.distributions as radist
 
 
-class interval_replacement:
+class IntervalReplacement:
     def __init__(   self,
                     dist,
                     cost_of_failure=None,
