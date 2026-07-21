@@ -197,35 +197,69 @@ class ReliabilityDistributionFrozen(stats._distn_infrastructure.rv_continuous_fr
         return ax
 
 class ReliabilityFromHazard(ReliabilityDistribution):
+    r"""Lifetime distribution built from an arbitrary hazard function.
+
+    Given :math:`h(t)`, the cumulative hazard is
+    :math:`H(t)=\int_0^t h(u)\,du` and everything else follows from it:
+
+    .. math::
+        R(t) = e^{-H(t)}, \qquad F(t) = 1 - e^{-H(t)}, \qquad
+        f(t) = h(t)\,e^{-H(t)}.
+
+    ``h`` must accept a scalar, since the integration calls it one point at a
+    time. A function written for arrays usually works anyway -- ``np.ones_like``
+    and friends accept scalars -- but a hazard that indexes its argument will
+    not.
+    """
+
     def __init__(self,h,*args,**kwargs):
         self.hazard = h
-        self.cumulative_hazard = None
-        self = ReliabilityDistribution.__init__(self,*args,**kwargs)
-    
-    def integrate_hazard(self,t,verb=False):
-        if verb:
-            print("Integrating hazard ... ")
+        ReliabilityDistribution.__init__(self,*args,**kwargs)
 
-        cdf_single = lambda t1,t2: quad(self.hazard,t1,t2)[0]
-        if len(t)>1:
-            L = np.vectorize(cdf_single)
-            ints = np.array(L(t[0:-1],t[1::]))
-            c = np.cumsum(np.append([0],ints))
-        else:
-            c = [cdf_single(0,t)]
+    def _integrate_hazard(self,t):
+        r"""``H(t)`` at each point of ``t``, which need not be sorted.
 
-        self.cumulative_hazard = np.stack((np.array(t),np.array(c)),axis=1)
+        Integrates from 0 to the smallest point, then between consecutive
+        points, and accumulates. 
+        """
+        t = np.atleast_1d(np.asarray(t,dtype=float))
 
-        if verb:
-            print("Done!")
-        
-    def _cdf(self,times):
-        if len(times)<2 or np.all(self.cumulative_hazard == None) or (not np.all(times==self.cumulative_hazard[1::,0])): # not sure why, but times doesn't contain zero. There must be somthing about the cdf call that causes this.
-            self.integrate_hazard(times)
-        else:
-            print("Cumulative hazard already computed")
+        order = np.argsort(t)
+        ordered = t[order]
 
-        return 1-np.exp(-self.cumulative_hazard[:,1])
+        # Below the support there is no accumulated hazard at all.
+        positive = ordered > 0
+        edges = np.concatenate([[0.0], ordered[positive]])
+        segments = np.array([
+            quad(self.hazard, lo, hi)[0]
+            for lo, hi in zip(edges[:-1], edges[1:])
+        ])
+
+        H_ordered = np.zeros(ordered.size)
+        H_ordered[positive] = np.cumsum(segments)
+
+        H = np.empty_like(H_ordered)
+        H[order] = H_ordered        # undo the sort
+        return H
+
+    def _cdf(self,t):
+        return -np.expm1(-self._integrate_hazard(t))
+
+    def _sf(self,t):
+        # Directly, rather than 1 - cdf, which loses every digit in the tail.
+        return np.exp(-self._integrate_hazard(t))
+
+    def _logsf(self,t):
+        return -self._integrate_hazard(t)
+
+    def _pdf(self,t):
+        h = np.array([float(self.hazard(v)) for v in np.atleast_1d(t)])
+        return h*np.exp(-self._integrate_hazard(t))
+
+    def _logpdf(self,t):
+        h = np.array([float(self.hazard(v)) for v in np.atleast_1d(t)])
+        with np.errstate(divide="ignore"):
+            return np.log(h) - self._integrate_hazard(t)
 
 class Exponential(ReliabilityDistribution):
     r"""Exponential distribution, parameterised by the mean.

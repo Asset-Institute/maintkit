@@ -149,13 +149,10 @@ def test_reliability_from_hazard_can_be_frozen():
     hazard function, which is not an rv_continuous constructor parameter, so
     dist.__class__(**dist._updated_ctor_param()) would raise TypeError.
 
-    Only freezing is checked here. Evaluating one of these is broken for a
-    separate, older reason: integrate_hazard's single-point branch passes the
-    whole array to quad instead of its element, and its multi-point branch
-    never integrates from 0 to t[0].
+    Evaluating one of these is covered in test_reliability_from_hazard.
     """
     from maintkit.distributions import ReliabilityFromHazard
-    dist = ReliabilityFromHazard(lambda t: 0.02 * np.ones_like(np.asarray(t, float)))
+    dist = ReliabilityFromHazard(lambda t: 0.02)
     frozen = dist()
     assert frozen.dist is dist
     lo, hi = frozen.support()
