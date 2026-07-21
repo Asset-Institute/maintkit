@@ -312,8 +312,12 @@ class RBM(Wiener):
             )
         return float(root[0])
 
-    def get_upper_lower(self,t,x0,alpha=0.025):
-        """Pointwise quantile band. ``alpha`` is the probability in each tail."""
+    def get_upper_lower(self,t,x0,alpha=0.05):
+        """Pointwise quantile band, from the alpha/2 and 1-alpha/2 quantiles.
+
+        ``alpha`` is a significance level, matching every other ``alpha`` in
+        the package, so the default 0.05 gives a 95% band. 
+        """
         t = np.atleast_1d(np.asarray(t,dtype=float))
         centre = self.mu*t + x0
         spread = 1.96*self.sigma*np.sqrt(t)
@@ -327,7 +331,7 @@ class RBM(Wiener):
         U = np.zeros(t.size)
         L = np.zeros(t.size)
         for i,ti in enumerate(t):
-            U[i] = self._solve_quantile(1.0-alpha, ti, x0, guesses_upper[i])
-            L[i] = self._solve_quantile(alpha, ti, x0, guesses_lower[i])
+            U[i] = self._solve_quantile(1.0-alpha/2.0, ti, x0, guesses_upper[i])
+            L[i] = self._solve_quantile(alpha/2.0, ti, x0, guesses_lower[i])
 
         return L,U

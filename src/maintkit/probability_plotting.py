@@ -176,7 +176,7 @@ def _check_frozen_weibull(dist):
         )
 
 
-def weibull_probability_plot(dist,data=None,ax=None,confidence_bounds=None,parameter_covariance=None,figsize=(7,7)):  
+def weibull_probability_plot(dist,data=None,ax=None,confidence_bounds=None,parameter_covariance=None,figsize=(7,7),*,alpha=0.05):  
 
     _check_frozen_weibull(dist)
         
@@ -231,7 +231,8 @@ def weibull_probability_plot(dist,data=None,ax=None,confidence_bounds=None,param
                 f"{parameter_covariance.shape}"
             )
 
-        RL,RU = weibull_reliability_confidence_interval(dist,t,parameter_covariance,kind=confidence_bounds,c=1.96) 
+        RL,RU = weibull_reliability_confidence_interval(
+            dist,t,parameter_covariance,kind=confidence_bounds,alpha=alpha) 
         FL,FU = np.log10(-np.log(RL)),np.log10(-np.log(RU))       
         ax.fill_between(t,FL,FU,label=f"CI ({confidence_bounds})",color='red',alpha=0.1)
 
@@ -246,7 +247,13 @@ def weibull_probability_plot(dist,data=None,ax=None,confidence_bounds=None,param
 
     return ax
 
-def weibull_reliability_confidence_interval(dist,t,p_cov,kind="Reliability",c=1.96):
+def weibull_reliability_confidence_interval(dist,t,p_cov,kind="Reliability",*,alpha=0.05):
+        """Pointwise confidence band for a fitted Weibull.
+
+        ``alpha`` is a significance level, so the default 0.05 gives a 95%
+        band.
+        """
+        c = stats.norm.ppf(1.0 - alpha/2.0)
         
         _check_frozen_weibull(dist)
         if kind.lower() not in ["time","reliability"]:
