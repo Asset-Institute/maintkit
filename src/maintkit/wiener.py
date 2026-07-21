@@ -1,7 +1,7 @@
 """Wiener process and regulated Brownian motion degradation models."""
 import numpy as np
 import scipy.stats as sps
-from scipy.optimize import fsolve
+from scipy.optimize import brentq
 from scipy.special import logsumexp
 
 from maintkit.inference import fit_mle
@@ -299,39 +299,45 @@ class RBM(Wiener):
         density = np.exp(logpdf)
         return density if density.ndim else float(density)
 
-    def _solve_quantile(self,q,ti,x0,guess):
-        """Invert the cdf at one time, checking that the solver converged."""
-        root, _, converged, message = fsolve(
-            lambda z: q - self.transition_distribution(z,ti,x0,type="cdf"),
-            guess, full_output=True,
-        )
-        if converged != 1:
+    def _solve_quantile(self,q,ti,x0):
+        """Invert the cdf at one time by bracketing.
+
+        The cdf is continuous and strictly increasing from F(0)=0 to 1, so a
+        bracketed method cannot fail once the upper end is wide enough. A local
+        method can and did: started anywhere near the reflecting boundary the
+        cdf is flat to many digits, and fsolve stalls with no progress rather
+        than walking to a root that is sitting in plain sight.
+        """
+        def excess(z):
+            return self.transition_distribution(z,ti,x0,type="cdf") - q
+
+        # F(0) = 0, so the lower end of the bracket is free for any q > 0.
+        upper = max(self.mu*ti + x0, 0.0) + 4.0*self.sigma*np.sqrt(ti) + 1.0
+        for _ in range(60):
+            if excess(upper) > 0:
+                break
+            upper *= 2.0
+        else:
             raise RuntimeError(
-                f"could not solve for the {q:g} quantile at t={ti:g}: "
-                f"{message.strip()}"
+                f"could not bracket the {q:g} quantile at t={ti:g}; the cdf "
+                f"never reached {q:g} below {upper:g}"
             )
-        return float(root[0])
+
+        return float(brentq(excess, 0.0, upper, xtol=1e-12, rtol=8.9e-16))
 
     def get_upper_lower(self,t,x0,alpha=0.05):
         """Pointwise quantile band, from the alpha/2 and 1-alpha/2 quantiles.
 
         ``alpha`` is a significance level, matching every other ``alpha`` in
-        the package, so the default 0.05 gives a 95% band. 
+        the package, so the default 0.05 gives a 95% band. It previously meant
+        the probability in a single tail, so a caller passing 0.025 for a 95%
+        band should now pass 0.05.
         """
         t = np.atleast_1d(np.asarray(t,dtype=float))
-        centre = self.mu*t + x0
-        spread = 1.96*self.sigma*np.sqrt(t)
-
-        # The process is reflected at zero, so the lower guess is started just
-        # inside the support rather than on the boundary, where the cdf is
-        # flattest and the solver has least to work with.
-        guesses_upper = centre + spread
-        guesses_lower = np.maximum(centre - spread, 1e-8)
-
         U = np.zeros(t.size)
         L = np.zeros(t.size)
         for i,ti in enumerate(t):
-            U[i] = self._solve_quantile(1.0-alpha/2.0, ti, x0, guesses_upper[i])
-            L[i] = self._solve_quantile(alpha/2.0, ti, x0, guesses_lower[i])
+            U[i] = self._solve_quantile(1.0-alpha/2.0, ti, x0)
+            L[i] = self._solve_quantile(alpha/2.0, ti, x0)
 
         return L,U

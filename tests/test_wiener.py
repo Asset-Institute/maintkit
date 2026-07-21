@@ -273,6 +273,45 @@ def test_quantile_band_inverts_the_cdf():
         assert model.transition_distribution(hi, ti, 0.0, type="cdf") == pytest.approx(1 - alpha/2, abs=1e-6)
 
 
+@pytest.mark.parametrize("mu,sigma", [(1.0, 2.0), (0.5, 1.0), (-0.3, 1.0),
+                                      (0.0, 1.0), (3.0, 0.5)])
+def test_quantile_band_over_the_notebook_grid(mu, sigma):
+    """The grid and parameters from the RBM example, which fsolve could not do.
+
+    At t=2.1 with mu=1, sigma=2 the lower guess landed at 1e-8, where the cdf
+    is 3.8e-08 of the 2.5% target -- flat enough that a local method reports no
+    progress. The root is at 0.249, nowhere near the boundary.
+    """
+    model = RBM(mu, sigma)
+    t = np.arange(0.1, 10.0, 0.1)
+    L, U = model.get_upper_lower(t, 0.0)
+    assert np.all(np.isfinite(L)) and np.all(np.isfinite(U))
+    assert np.all(L >= 0)
+    assert np.all(L < U)
+
+
+def test_quantile_band_is_accurate_where_fsolve_stalled():
+    model = RBM(1.0, 2.0)
+    L, U = model.get_upper_lower(np.array([2.1]), 0.0, alpha=0.05)
+    assert L[0] == pytest.approx(0.2489571025, abs=1e-8)
+    assert model.transition_distribution(L[0], 2.1, 0.0, type="cdf") == pytest.approx(0.025, abs=1e-12)
+
+
+def test_quantile_band_handles_a_tiny_time():
+    """s = sigma*sqrt(t) collapses, so the bracket has to shrink with it."""
+    L, U = RBM(1.0, 2.0).get_upper_lower(np.array([1e-6]), 0.0)
+    assert 0 <= L[0] < U[0]
+
+
+def test_quantile_band_is_monotone_in_alpha():
+    model = RBM(1.0, 2.0)
+    t = np.array([1.0, 5.0])
+    narrow_L, narrow_U = model.get_upper_lower(t, 0.0, alpha=0.20)
+    wide_L, wide_U = model.get_upper_lower(t, 0.0, alpha=0.01)
+    assert np.all(wide_L < narrow_L)
+    assert np.all(wide_U > narrow_U)
+
+
 def test_quantile_band_returns_scalars_not_arrays():
     """fsolve returns a length-1 array; assigning it into a slot is an error
     under numpy 2."""
