@@ -128,6 +128,45 @@ def test_kaplan_meier_rejects_an_unknown_interval():
                      confidence_interval="bootstrap")
 
 
+def test_kaplan_meier_alpha_widens_the_bounds():
+    """These were hard-coded at 1.96 with no way to change the level."""
+    observed = np.array([1, 0, 1, 1, 0, 1])
+    _, F, LB95, UB95 = kaplan_meier(COMPLETE, observed, plot=False, alpha=0.05)
+    _, _, LB99, UB99 = kaplan_meier(COMPLETE, observed, plot=False, alpha=0.01)
+    interior = (LB95 > 0) & (UB95 < 1)          # ignore where clipping bites
+    assert np.all(LB99[interior] <= LB95[interior] + 1e-12)
+    assert np.all(UB99[interior] >= UB95[interior] - 1e-12)
+
+
+def test_kaplan_meier_exponential_bounds_are_nan_where_undefined():
+    """log(Rhat) is 0 wherever Rhat is 1, so the interval divides by zero
+    there. It produced inf, then nan, and a stream of RuntimeWarnings."""
+    _, F, LB, UB = kaplan_meier(COMPLETE, ALL_OBSERVED, plot=False,
+                                confidence_interval="exponential")
+    assert np.isnan(LB[0]) and np.isnan(UB[0])      # Rhat = 1 at t = 0
+    assert np.isnan(LB[-1]) and np.isnan(UB[-1])    # Rhat = 0 at the last
+    assert np.all(np.isfinite(LB[1:-1]))
+    assert np.all(LB[1:-1] <= F[1:-1] + 1e-12)
+    assert np.all(F[1:-1] <= UB[1:-1] + 1e-12)
+
+
+def test_kaplan_meier_exponential_does_not_warn():
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        kaplan_meier(COMPLETE, ALL_OBSERVED, plot=False,
+                     confidence_interval="exponential")
+
+
+def test_mcf_alpha_widens_the_bounds():
+    _, M, LCL95, UCL95 = empirical_mean_cumulative_function(
+        FLEET, HORIZONS, plot=False, alpha=0.05)
+    _, _, LCL99, UCL99 = empirical_mean_cumulative_function(
+        FLEET, HORIZONS, plot=False, alpha=0.01)
+    assert np.all(LCL99 <= LCL95 + 1e-12)
+    assert np.all(UCL99 >= UCL95 - 1e-12)
+
+
 def test_kaplan_meier_plot_returns_six_values():
     out = kaplan_meier(COMPLETE, ALL_OBSERVED, plot=True)
     assert len(out) == 6

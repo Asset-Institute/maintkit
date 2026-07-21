@@ -35,7 +35,12 @@ def ecdf(ti,observed,pos="midpoint",plot=True):
 
     return x,Fhat
 
-def kaplan_meier(ti,observed,plot=True,confidence_interval="greenwood"):
+def kaplan_meier(ti,observed,plot=True,confidence_interval="greenwood",*,alpha=0.05):
+    """Product-limit estimate of F with right-censoring.
+
+    ``alpha`` is a significance level, so the default 0.05 gives 95% bounds.
+    """
+    c = stats.norm.ppf(1.0 - alpha/2.0)
     
     # ensure that inputs are numpy arrays
     ti = np.array(ti)
@@ -72,21 +77,27 @@ def kaplan_meier(ti,observed,plot=True,confidence_interval="greenwood"):
 
     if confidence_interval.lower() == "greenwood":
         v = (Rhat**2)*S
-        UB = np.clip(Fhat+1.96*np.sqrt(v),None,1)
-        LB = np.clip(Fhat-1.96*np.sqrt(v),0,None)
+        UB = np.clip(Fhat+c*np.sqrt(v),None,1)
+        LB = np.clip(Fhat-c*np.sqrt(v),0,None)
     elif confidence_interval.lower() == "exponential":
-        v = 1/np.log(Rhat)**2 * S
-        cp = np.log(-np.log(Rhat))+1.96*np.sqrt(v)
-        cm = np.log(-np.log(Rhat))-1.96*np.sqrt(v)
-        LB = 1-np.exp(-np.exp(cm))
-        UB = 1-np.exp(-np.exp(cp))
+        # log(Rhat) is 0 wherever Rhat is 1, which it always is at t=0 and
+        # anywhere before the first failure.
+        undefined = (Rhat >= 1.0) | (Rhat <= 0.0)
+        safe = np.where(undefined, 0.5, Rhat)          # any interior value
+        v = S/np.log(safe)**2
+        half = c*np.sqrt(v)
+        cp = np.log(-np.log(safe))+half
+        cm = np.log(-np.log(safe))-half
+        LB = np.where(undefined, np.nan, 1-np.exp(-np.exp(cm)))
+        UB = np.where(undefined, np.nan, 1-np.exp(-np.exp(cp)))
     else:
         raise ValueError("confidence_interval not recognized. Use ""greenwood"" or ""exponential"" """)
 
     if plot:
         fig, ax = plt.subplots()
         ax.step(uti,Fhat,where="post",label=r"$\hat{F}(t)$",color="blue")
-        ax.fill_between(uti,LB,y2=UB,linestyle='--',color="blue",step="post",label="95% CI",alpha=0.1)
+        ax.fill_between(uti,LB,y2=UB,linestyle='--',color="blue",step="post",
+                        label=f"{100*(1-alpha):g}% CI",alpha=0.1)
         ax.set_xlabel("Time")
         ax.set_ylabel(r"$\hat{F}(t)$")
         ax.set_ylim((0,ax.get_ylim()[1]))
@@ -95,7 +106,13 @@ def kaplan_meier(ti,observed,plot=True,confidence_interval="greenwood"):
     else:
         return uti,Fhat,LB,UB
 
-def empirical_mean_cumulative_function(event_times,suspension_times,plot=True,confidence_interval="normal"):
+def empirical_mean_cumulative_function(event_times,suspension_times,plot=True,
+                                       confidence_interval="normal",*,alpha=0.05):
+    """Mean cumulative function across a fleet.
+
+    ``alpha`` is a significance level, so the default 0.05 gives 95% bounds.
+    """
+    c = stats.norm.ppf(1.0 - alpha/2.0)
     
     # [1] Chapter 12.1A of Tobias, P.A., Trindade, D., 2011. Applied Reliability, Third. ed. CRC Press LLC, London, United Kingdom.
 
@@ -137,10 +154,10 @@ def empirical_mean_cumulative_function(event_times,suspension_times,plot=True,co
         V_hat = np.sum( np.cumsum( d/d.sum(axis=0)*(n-m_hat),axis=1)**2, axis=0)
         se_hat = np.sqrt(V_hat)
         if confidence_interval.lower() == "normal":
-            M_UCL = M_hat + 1.96*se_hat
-            M_LCL = M_hat - 1.96*se_hat
-        elif confidence_interval == "logit":
-            w = np.exp(1.96*se_hat/M_hat)
+            M_UCL = M_hat + c*se_hat
+            M_LCL = M_hat - c*se_hat
+        elif confidence_interval.lower() == "logit":
+            w = np.exp(c*se_hat/M_hat)
             M_UCL = w*M_hat
             M_LCL = M_hat/w
         else:
@@ -154,7 +171,9 @@ def empirical_mean_cumulative_function(event_times,suspension_times,plot=True,co
         fig, ax = plt.subplots()
         ax.step(t,M_hat,where="post",label=r"$\hat{M}(t)$",linewidth=2,color="blue")
         if confidence_interval is not None:
-            ax.fill_between(t[1::],M_LCL,y2=M_UCL,linestyle='--',linewidth=2,color="blue",step="post",label="95% CI",alpha=0.1)
+            ax.fill_between(t[1::],M_LCL,y2=M_UCL,linestyle='--',linewidth=2,
+                            color="blue",step="post",
+                            label=f"{100*(1-alpha):g}% CI",alpha=0.1)
         ax.set_xlabel("Time")
         ax.set_ylabel(r"$\hat{M}(t)$") 
         ax.set_ylim((0,ax.get_ylim()[1]))
@@ -235,7 +254,8 @@ def weibull_probability_plot(dist,data=None,ax=None,confidence_bounds=None,param
         RL,RU = weibull_reliability_confidence_interval(
             dist,t,parameter_covariance,kind=confidence_bounds,alpha=alpha) 
         FL,FU = np.log10(-np.log(RL)),np.log10(-np.log(RU))       
-        ax.fill_between(t,FL,FU,label=f"CI ({confidence_bounds})",color='red',alpha=0.1)
+        ax.fill_between(t,FL,FU,color='red',alpha=0.1,
+                        label=f"{100*(1-alpha):g}% CI ({confidence_bounds})")
 
     ######################### format plot ################################
     ytc = np.log10(-np.log([0.995, 0.99, 0.95, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1,0.01, 0.001, 0.00001]))
