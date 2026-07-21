@@ -28,6 +28,7 @@ __all__ = [
     "ConvergenceWarning",
     "fit_mle",
     "result_at",
+    "result_from_covariance",
     "hessian_at",
 ]
 
@@ -235,6 +236,63 @@ def fit_mle(objective, p0, *, gradient=None, transform=None, alpha=0.05,
         y_hat, hessian, transform,
         alpha=alpha, nnlf_value=result.fun,
         success=result.success, message=result.message,
+        names=names, ci_method=ci_method,
+    )
+
+
+def result_from_covariance(params, cov, *, transform=None, alpha=0.05, names=None,
+                           nnlf_value=np.nan, ci_method="transformed",
+                           message="closed-form estimate and information"):
+    """Build a :class:`FitResult` from an estimate whose covariance is known exactly.
+
+    For models where the Fisher information is available in closed form, so
+    neither an optimiser nor a numerical Hessian is needed. The exponential is
+    the case in hand: :math:`I(\\lambda) = r/\\lambda^{2}`, giving
+    :math:`\\operatorname{se}(\\hat\\lambda) = \\hat\\lambda/\\sqrt{r}` exactly.
+    Differentiating numerically to recover a quantity already known in closed
+    form would only add error.
+
+    Parameters
+    ----------
+    params : array_like
+        The estimate, in natural parameters.
+    cov : array_like
+        Covariance of ``params``, in the *natural* parameterisation.
+    transform : Transform, optional
+        Reparameterisation used for confidence intervals. The natural-space
+        covariance is mapped to the unconstrained space internally, so callers
+        supply ``cov`` in the units they think in.
+    nnlf_value : float, optional
+        Negative log-likelihood at ``params``, if known. Recorded on the result
+        but not otherwise used.
+
+    Returns
+    -------
+    FitResult
+    """
+    transform = Identity() if transform is None else transform
+    if not isinstance(transform, Transform):
+        raise TypeError(f"transform must be a Transform, got {type(transform).__name__}")
+
+    params = np.atleast_1d(np.asarray(params, dtype=float))
+    cov = np.atleast_2d(np.asarray(cov, dtype=float))
+    if cov.shape != (params.size, params.size):
+        raise ValueError(
+            f"cov must be {(params.size, params.size)} for {params.size} "
+            f"parameters, got {cov.shape}"
+        )
+
+    # _build_result works from the unconstrained-space Hessian, so invert the
+    # delta-method relation cov = J cov_y J^T to recover cov_y, then H.
+    y_hat = transform.forward(params)
+    J = transform.jacobian(y_hat)
+    J_inv = _invert(J, "transform Jacobian")
+    cov_y = J_inv @ cov @ J_inv.T
+
+    return _build_result(
+        y_hat, _invert(cov_y, "covariance"), transform,
+        alpha=alpha, nnlf_value=nnlf_value,
+        success=True, message=message,
         names=names, ci_method=ci_method,
     )
 

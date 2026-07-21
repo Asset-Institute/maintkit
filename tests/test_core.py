@@ -22,8 +22,8 @@ def test_parameter_transform_identity_roundtrip():
 def test_expdist_closed_form_matches_analytic():
     rng = np.random.default_rng(1)
     ti = rng.exponential(scale=25.0, size=500)
-    p_hat, _ = expdist().fit(ti, observed="all")
-    assert np.isclose(p_hat, len(ti) / ti.sum())
+    res = expdist().fit(ti, observed="all")
+    assert np.isclose(res.params[0], ti.sum() / len(ti))
 
 
 def test_weibull_mle_recovers_parameters():

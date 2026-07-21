@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numdifftools as ndt
 from maintkit.utilities import _parameter_transform_log,_parameter_transform_identity
-from maintkit.inference import fit_mle
+from maintkit.inference import fit_mle, result_from_covariance
 from maintkit.transforms import Identity, Log
 
 class reliability_distribution(stats.rv_continuous):
@@ -213,38 +213,116 @@ class reliability_from_hazard(reliability_distribution):
         return 1-np.exp(-self.cumulative_hazard[:,1])
 
 class expdist(reliability_distribution):
-    
+    r"""Exponential distribution, parameterised by the mean.
+
+    The single parameter is the **mean** :math:`\theta = \mathbb{E}[T]`, which
+    is also the reciprocal of the failure rate, :math:`\theta = 1/\lambda`.
+
+    This is deliberately the same quantity that ``scipy.stats`` calls
+    ``scale``, so there is no conversion anywhere in the class: ``fit``,
+    ``nnlf``, ``nnlf_gradient`` and the inherited distribution methods all
+    speak the same parameter. A fitted value drops straight into a frozen
+    distribution::
+
+        res  = expdist().fit(ti, observed=observed)
+        dist = expdist()(scale=res.params[0])
+        dist.reliability(t)
+
+    It is also consistent with :class:`weibull`, whose ``eta`` is likewise a
+    scale.
+    """
+
+    parameter_transform = Log()
+    parameter_names = ("mean",)
+
     def _pdf(self,t):
         return np.exp(-t)
-    
+
     def _cdf(self,t):
         return 1-np.exp(-t)
-    
-    def nnlf(self,mu0,ti,observed="all"):
-        loc = 0
-        scale = mu0
 
-        # handle case where all are observed
+    @staticmethod
+    def _scalar(p):
+        """Accept a scalar or a length-1 array, as fit_mle passes an array."""
+        return float(np.atleast_1d(np.asarray(p, dtype=float))[0])
+
+    @staticmethod
+    def _failure_count(ti, observed):
+        if isinstance(observed,str) and observed == "all":
+            return float(len(ti))
+        return float(np.sum(observed))
+
+    def nnlf(self,p,ti,observed="all"):
+        r"""Negative log-likelihood as a function of the mean.
+
+        .. math::
+            \ell(\theta) = -r\log\theta - \frac{1}{\theta}\sum_i t_i
+
+        The sum runs over all observations, censored included, since
+        :math:`\log f` and :math:`\log S` share the :math:`-t/\theta` term.
+        """
+        mean = self._scalar(p)
+        ti = np.asarray(ti, dtype=float)
+
         if isinstance(observed,str) and observed == "all":
             observed = np.ones(ti.shape)
-        
-        loglike = sum(self.logpdf(ti[observed==1],loc,scale)) + \
-            sum(self.logsf(ti[observed==0],loc,scale)) # deals with right censoring
-        
-        return -loglike
-    
-    def fit(self,ti,observed="all",bnds=None):
-        if isinstance(observed,str) and observed == "all":
-            r = len(ti)
-        else:
-            r = np.sum(observed)
+        observed = np.asarray(observed, dtype=float)
 
-        p_hat = r/np.sum(ti)
-        s = p_hat/np.sqrt(r)
-        p_ci = p_hat + 1.96*np.array([-s,s])
-        
-        return p_hat, p_ci
-        
+        loglike = sum(self.logpdf(ti[observed==1],0,mean)) + \
+            sum(self.logsf(ti[observed==0],0,mean)) # deals with right censoring
+
+        return -loglike
+
+    def nnlf_gradient(self,p,ti,observed="all"):
+        r"""Analytic score, with respect to the mean.
+
+        .. math::
+            \partial\ell/\partial\theta
+              = \frac{1}{\theta^{2}}\left(\sum_i t_i - r\theta\right)
+
+        Returned negated, to match :meth:`nnlf`.
+        """
+        mean = self._scalar(p)
+        ti = np.asarray(ti, dtype=float)
+        r = self._failure_count(ti, observed)
+        return -np.array([(np.sum(ti) - r*mean) / mean**2])
+
+    def fit(self,ti,observed="all",*,alpha=0.05,ci_method="transformed"):
+        r"""Closed-form maximum-likelihood fit of the mean.
+
+        Both the estimate and its information are analytic,
+
+        .. math::
+            \hat\theta = \frac{\sum_i t_i}{r},
+            \qquad
+            I(\hat\theta) = \frac{r}{\hat\theta^{2}},
+            \qquad
+            \operatorname{se}(\hat\theta) = \frac{\hat\theta}{\sqrt r},
+
+        so no optimiser runs and no Hessian is differenced.
+
+        Returns
+        -------
+        FitResult
+            ``params[0]`` is the mean, usable directly as ``scale=``.
+        """
+        ti = np.asarray(ti, dtype=float)
+        r = self._failure_count(ti, observed)
+        if r <= 0:
+            raise ValueError("cannot fit: no observed failures")
+
+        mean_hat = np.sum(ti)/r
+        cov = np.array([[mean_hat**2 / r]])
+
+        return result_from_covariance(
+            [mean_hat], cov,
+            transform=self.parameter_transform,
+            alpha=alpha,
+            names=self.parameter_names,
+            nnlf_value=self.nnlf(mean_hat, ti, observed),
+            ci_method=ci_method,
+        )
+
 class weibull(reliability_distribution):
 
     # eta (scale) and beta (shape) are both strictly positive, so fit on the

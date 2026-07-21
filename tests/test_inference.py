@@ -15,6 +15,7 @@ from maintkit.inference import (
     fit_mle,
     hessian_at,
     result_at,
+    result_from_covariance,
 )
 from maintkit.transforms import Identity, Log, Composite, Logit
 
@@ -185,6 +186,49 @@ def test_singular_hessian_raises_informative_error():
         return (p[0] - 1.0) ** 2          # p[1] does not appear
     with pytest.raises(np.linalg.LinAlgError, match="singular and cannot be inverted"):
         fit_mle(flat, p0=[0.5, 0.5], transform=Identity())
+
+
+# -------------------------------------------- result_from_covariance -------
+def test_result_from_covariance_reproduces_a_known_result():
+    """Given the covariance result_at would compute, both must agree.
+
+    Ties the analytic path to the numerical one, so a future change to either
+    cannot silently diverge.
+    """
+    rng = np.random.default_rng(7)
+    t = rng.exponential(scale=20.0, size=500)
+    theta_hat = t.mean()
+    numeric = result_at(exponential_nnlf_factory(t), [theta_hat], transform=Log())
+    analytic = result_from_covariance(
+        [theta_hat], numeric.cov, transform=Log()
+    )
+    np.testing.assert_allclose(analytic.params, numeric.params, rtol=1e-12)
+    np.testing.assert_allclose(analytic.cov, numeric.cov, rtol=1e-10)
+    np.testing.assert_allclose(analytic.ci, numeric.ci, rtol=1e-8)
+
+
+def test_result_from_covariance_round_trips_the_transform():
+    """cov is supplied in natural units; the transform must not distort it."""
+    params = np.array([3.0, 0.25])
+    cov = np.array([[0.09, 0.01], [0.01, 0.0004]])
+    res = result_from_covariance(
+        params, cov, transform=Composite([Log(), Logit()])
+    )
+    np.testing.assert_allclose(res.cov, cov, rtol=1e-10)
+    np.testing.assert_allclose(res.se, np.sqrt(np.diag(cov)), rtol=1e-10)
+
+
+def test_result_from_covariance_rejects_bad_shape():
+    with pytest.raises(ValueError, match="cov must be"):
+        result_from_covariance([1.0, 2.0], np.eye(3), transform=Identity())
+
+
+def test_result_from_covariance_needs_no_objective():
+    """No optimiser, no numerical differentiation, no likelihood required."""
+    res = result_from_covariance([2.0], [[0.25]], transform=Log())
+    assert res.success
+    assert res.se[0] == pytest.approx(0.5)
+    assert np.isnan(res.nnlf)
 
 
 # ------------------------------------------------- convergence reporting ----

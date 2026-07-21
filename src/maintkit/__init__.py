@@ -37,6 +37,7 @@ from maintkit.inference import (
     ConvergenceWarning,
     fit_mle,
     result_at,
+    result_from_covariance,
     hessian_at,
 )
 from maintkit.transforms import Transform, Identity, Log, Logit, Composite
@@ -65,6 +66,7 @@ __all__ = [
     "ConvergenceWarning",
     "fit_mle",
     "result_at",
+    "result_from_covariance",
     "hessian_at",
     "Transform",
     "Identity",

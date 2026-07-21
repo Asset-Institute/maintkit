@@ -59,9 +59,9 @@ def test_expdist_fit_with_array_censoring():
     ti = rng.exponential(scale=50.0, size=100)
     observed = np.ones(100)
     observed[::5] = 0  # some right-censored
-    p_hat, p_ci = expdist().fit(ti, observed=observed)
+    res = expdist().fit(ti, observed=observed)
     r = observed.sum()
-    assert np.isclose(p_hat, r / ti.sum())
+    assert np.isclose(res.params[0], ti.sum() / r)
 
 
 def test_wiener_alias_and_symmetric_covariance():
