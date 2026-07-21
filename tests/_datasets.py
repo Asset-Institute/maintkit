@@ -96,11 +96,18 @@ def nhpp_interval_counts(n_assets=15, a=0.02, b=1.5, horizon=200.0,
 
 def imperfect_maintenance_data(a=0.02, b=1.5, rho=0.4, n_pm=6,
                                pm_spacing=50.0, seed=606):
-    """Failure times under proportional age reduction. Returns (failures, pm_times)."""
+    """Failure times under proportional age reduction.
+
+    Returns ``(failures, pm_times, truncation_time)``. ``pm_times`` holds only
+    the maintenance actions -- observation starts at 0 and ends at
+    ``truncation_time``, neither of which is a PM.
+    """
     rng = np.random.default_rng(seed)
-    pm_times = [float(pm_spacing * k) for k in range(n_pm + 1)]
+    edges = [float(pm_spacing * k) for k in range(n_pm + 1)]
+    pm_times = edges[1:-1]                 # drop the origin and the horizon
+    truncation_time = edges[-1]
     failures = []
-    for lo, hi in zip(pm_times[:-1], pm_times[1:]):
+    for lo, hi in zip(edges[:-1], edges[1:]):
         virtual_start = lo - rho * lo
         t = virtual_start
         while True:
@@ -110,7 +117,7 @@ def imperfect_maintenance_data(a=0.02, b=1.5, rho=0.4, n_pm=6,
             if real >= hi:
                 break
             failures.append(float(real))
-    return np.array(failures), np.array(pm_times)
+    return np.array(failures), np.array(pm_times), truncation_time
 
 
 def wiener_path(n_steps=400, horizon=50.0, mu=0.5, sigma=1.0, seed=707):

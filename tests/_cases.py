@@ -69,8 +69,10 @@ def _power_law_nhpp_fit_interval():
 
 def _imperfect_maintenance_fit():
     from maintkit.imperfect_maintenance import imperfect_pm_minimal_cm
-    failures, pm_times = ds.imperfect_maintenance_data()
-    return imperfect_pm_minimal_cm(0.02, 1.5, 0.4).fit(failures, pm_times)
+    failures, pm_times, truncation_time = ds.imperfect_maintenance_data()
+    return imperfect_pm_minimal_cm(0.02, 1.5, 0.4).fit(
+        failures, pm_times, truncation_time
+    )
 
 
 def _wiener_estimate():
