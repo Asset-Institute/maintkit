@@ -51,24 +51,21 @@ def kaplan_meier(ti,observed,plot=True,confidence_interval="greenwood"):
     obsu = observed[idxu] 
     uti = uti[obsu==1] # remove censored samples from the unique times
 
-    N = len(ti)
-    Nu = len(uti) 
-    ni = N #assets at risk
+    Nu = len(uti)
     Rhat = np.ones(Nu+1)
     S = np.zeros(Nu+1)
-    S[0] = 0
     for i in range(0,Nu):
-        droppedOut = (ti==uti[i]) # number dropped out at time uti 
-        failed = np.logical_and(droppedOut,observed)  
-        di = np.sum(failed) # number of failures at time uti
+        # Everything still under observation at uti[i], counted directly.
+        ni = np.sum(ti >= uti[i])
+        di = np.sum((ti == uti[i]) & (observed == 1))
 
         Rhat[i+1] = Rhat[i]*(ni-di)/ni # Product limit estimation
-        if Rhat[i+1]!=0:
+        if ni > di:
             S[i+1] = S[i]+di/(ni*(ni-di)) # Greenwood formula
         else:
-            print("Warning: Reliability is zero so no variance can be calculated.")
-
-        ni -= np.sum(droppedOut)
+            # Reliability has hit zero, so the sum has no further term. Carry
+            # the variance forward rather than dropping it back to zero.
+            S[i+1] = S[i]
     
     uti = np.insert(uti,0,0)
     Fhat = 1-Rhat   
@@ -131,7 +128,11 @@ def empirical_mean_cumulative_function(event_times,suspension_times,plot=True,co
         M_UCL = np.nan*np.ones(M_hat.shape)
         M_LCL = M_UCL
     elif confidence_interval is None:
-        print('Skipping confidence interval ... ')
+        # Both return statements read these unconditionally, so leaving them
+        # unassigned here raised UnboundLocalError for any fleet of more than
+        # one asset. The single-asset branch above already returns nan.
+        M_UCL = np.nan*np.ones(M_hat.shape)
+        M_LCL = M_UCL
     else:
         V_hat = np.sum( np.cumsum( d/d.sum(axis=0)*(n-m_hat),axis=1)**2, axis=0)
         se_hat = np.sqrt(V_hat)
@@ -285,7 +286,11 @@ def weibull_reliability_confidence_interval(dist,t,p_cov,kind="Reliability",*,al
             fun = lambda x: x[1]*(np.log(t)-np.log(x[0]))
             g = ndt.Gradient(fun)(p)
             w = c*np.sqrt( np.sum(g@p_cov*g,axis=1) )
-            RL,RU = np.exp(-np.exp(u-w)),np.exp(-np.exp(u+w))
+            # R = exp(-exp(u)) is DECREASING in u, so u-w is the upper bound.
+            # These were returned the other way round, giving a pair inverted
+            # relative to the 'time' branch. fill_between ignores the order of
+            # its arguments, so the plot looked correct either way.
+            RU,RL = np.exp(-np.exp(u-w)),np.exp(-np.exp(u+w))
         
         if prependNaN:
             RL = np.insert(RL,0,np.nan)
