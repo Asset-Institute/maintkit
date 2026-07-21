@@ -1,9 +1,10 @@
 from scipy import stats as stats
 from scipy import optimize as opt
 from scipy.integrate import quad
+import copy
+
 import numpy as np
 import numdifftools as ndt
-from maintkit.utilities import _parameter_transform_log
 from maintkit.inference import fit_mle, result_at
 from maintkit.transforms import Log
 
@@ -19,7 +20,27 @@ class poisson_process:
         self.parameters = parameters
     
     def intensity(self,t):
+        """Intensity at ``t``, using the model's current parameters.
+
+        Subclasses define this and nothing else about the parameters. The
+        likelihood evaluates a trial point on a copy of the model rather than
+        passing parameters in, so this stays a one-argument method.
+        """
         raise NotImplementedError("Intensity must be defined via subclassing.")
+
+    def _with_parameters(self,parameters):
+        """A shallow copy of the model carrying ``parameters``.
+
+        nnlf used to assign the trial point to ``self.parameters`` and restore
+        it afterwards, which left the model holding trial values if anything
+        raised in between. Evaluating on a copy avoids that without making
+        every subclass accept a parameter argument in ``intensity`` -- that
+        would push the cost of an internal problem onto everyone extending the
+        class, and subclassing to supply an intensity is the intended use.
+        """
+        clone = copy.copy(self)
+        clone.parameters = parameters
+        return clone
 
     def random_counts(self,t,s=0,size=1):
         if s != min(t):
@@ -41,9 +62,10 @@ class poisson_process:
         elif t0.size != t1.size:
             raise ValueError("t0 must be a scalar or the same length as t1")
 
-        LAMBDA = [quad(self.intensity, t0[ii], t1[ii])[0] for ii in range(t1.size)]
+        LAMBDA = [quad(self.intensity, t0[ii], t1[ii])[0]
+                  for ii in range(t1.size)]
         return LAMBDA
-    
+
     def log_intensity(self,t):
         return np.log(self.intensity(t))
 
@@ -57,9 +79,6 @@ class poisson_process:
     def nnlf(self,p,event_times,truncation_times=None):
         # event_times[asset][failure time index], truncation_time=None means that last index is a failure.
 
-        original_parameters = self.parameters
-        self.parameters = p
-
         # turn into a list if tim is a numpy array. Lists are preferred
         # since they can be ragged and have different numbers of event times. 
         if isinstance(event_times,np.ndarray):
@@ -72,16 +91,17 @@ class poisson_process:
                     if not truncation_times[m] > max(event_times[m]):
                         raise ValueError("Invalid truncation time for asset "+str(m))
 
+        model = self._with_parameters(p)
+
         like = 0
         for m,_ in enumerate(event_times):
             for f in event_times[m]:
-                like += self.log_intensity(f)
+                like += model.log_intensity(f)
 
             if truncation_times is not None and truncation_times[m] is not None:
                 T = truncation_times[m]
-                like += -np.sum(self.cumulative_intensity(T,t0=0))
-        
-        self.parameters = original_parameters
+                like += -np.sum(model.cumulative_intensity(T,t0=0))
+
         return -like
 
     def fit(self,event_times,p0,truncation_times=None,*,alpha=0.05,
@@ -154,9 +174,6 @@ class poisson_process:
             f"{type(event_times).__name__}"
         )
 
-    def transform_scale(self,x,likelihood_hessian=None,direction="inverse"):
-         return _parameter_transform_log(x,likelihood_hessian=likelihood_hessian,\
-            direction=direction)
 
 class power_law_nhpp(poisson_process):
 
@@ -386,9 +403,8 @@ class power_law_nhpp(poisson_process):
         assert len(ins)>0, "inspections must be a list of lists"
         assert all([isinstance(ins[ii],list) for ii in range(len(ins))]), "inspections must be a list of lists"
         
-        original_parameters = self.parameters
-        self.parameters = p
-        
+        model = self._with_parameters(p)
+
         loglike = 0
         for m in range(len(ni)):
             # difference to obtain number of arrivals in the time interval since last inspection
@@ -399,11 +415,9 @@ class power_law_nhpp(poisson_process):
         
             if len(nim)>0: # otherwise there is no data :(
                 inspec_m = np.array(ins[m])
-                LAMBDA = self.cumulative_intensity(inspec_m[1::],t0=inspec_m[0:-1])
+                LAMBDA = model.cumulative_intensity(inspec_m[1::],t0=inspec_m[0:-1])
                 for ii,nimii in enumerate(nim):
                     loglike += stats.poisson(mu=LAMBDA[ii]).logpmf(nimii)
-        
-        self.parameters = original_parameters
 
         return -loglike
     
@@ -444,9 +458,6 @@ class power_law_nhpp(poisson_process):
             ci_method=ci_method,
         )
 
-    def transform_scale(self,x,likelihood_hessian=None,direction="inverse"):
-        return _parameter_transform_log(x,likelihood_hessian=likelihood_hessian,\
-            direction=direction)
 
     def mcf_confidence_interval(self,t,p_cov,kind="mcf",*,alpha=0.05,
                                 ndt_kwds=None):
