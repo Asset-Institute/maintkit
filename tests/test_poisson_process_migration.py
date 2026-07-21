@@ -74,8 +74,40 @@ def test_base_fit_returns_fitresult(base_fit):
     assert base_fit.names == ("a", "b")
 
 
+# The base fitter now uses power_law_nhpp's analytic score, so BFGS stops at a
+# different -- and better -- point than the finite-difference run that produced
+# LEGACY_PP_FIT_PARAMS. Measured against the exact profile MLE:
+#
+#   legacy (finite difference) : 2.20e-06 relative
+#   current (analytic score)   : 2.03e-07 relative   -- 10.8x closer
+#
+# so the two legacy/current values differ by ~2e-06. The tolerance admits that
+# and nothing larger; test_base_fit_is_closer_to_the_mle_than_legacy is what
+# actually establishes the direction of the change.
+BASE_PARAM_RTOL = 1e-5
+
+
 def test_base_fit_estimates_unchanged(base_fit):
-    np.testing.assert_allclose(base_fit.params, LEGACY_PP_FIT_PARAMS, rtol=PARAM_RTOL)
+    np.testing.assert_allclose(
+        base_fit.params, LEGACY_PP_FIT_PARAMS, rtol=BASE_PARAM_RTOL
+    )
+
+
+def test_base_fit_is_closer_to_the_mle_than_legacy(base_fit, data):
+    """The estimate moved because the optimiser got better, not because it drifted.
+
+    power_law_nhpp.fit solves the score equation directly, so its result is the
+    reference point. The numerically-optimised base fit should now sit nearer to
+    it than the recorded finite-difference run did.
+    """
+    events, trunc = data
+    exact = power_law_nhpp(0.02, 1.5).fit(events, truncation_times=trunc).params
+    current = np.abs(base_fit.params / exact - 1).max()
+    legacy = np.abs(LEGACY_PP_FIT_PARAMS / exact - 1).max()
+    assert current < legacy, (
+        f"analytic-gradient fit is {current:.2e} from the MLE, worse than the "
+        f"recorded finite-difference fit at {legacy:.2e}"
+    )
 
 
 def test_base_fit_covariance_unchanged(base_fit):
@@ -95,8 +127,8 @@ def test_generic_optimiser_agrees_with_the_closed_form(base_fit, data):
     analytic MLE is the evidence that the stopping point is sound.
     """
     events, trunc = data
-    closed_form = power_law_nhpp(0.02, 1.5).fit(events, truncation_times=trunc)
-    np.testing.assert_allclose(base_fit.params, closed_form.params, rtol=1e-5)
+    analytic = power_law_nhpp(0.02, 1.5).fit(events, truncation_times=trunc)
+    np.testing.assert_allclose(base_fit.params, analytic.params, rtol=1e-5)
 
 
 # ---------------------------------------------------- power_law_nhpp.fit ---
@@ -106,22 +138,22 @@ def plp_fit(data):
     return power_law_nhpp(0.02, 1.5).fit(events, truncation_times=trunc)
 
 
-def test_closed_form_estimate_unchanged(plp_fit):
-    """The closed form is untouched; only how the result is packaged changed."""
+def test_equal_horizon_estimate_unchanged(plp_fit):
+    """The profile solve reproduces the Crow form exactly for equal horizons."""
     np.testing.assert_allclose(plp_fit.params, LEGACY_PLP_FIT_PARAMS, rtol=PARAM_RTOL)
 
 
-def test_closed_form_covariance_unchanged(plp_fit):
+def test_equal_horizon_covariance_unchanged(plp_fit):
     np.testing.assert_allclose(plp_fit.cov, LEGACY_PLP_FIT_COV, rtol=COV_RTOL)
 
 
-def test_closed_form_ci_moves_only_by_the_critical_value(plp_fit):
+def test_equal_horizon_ci_moves_only_by_the_critical_value(plp_fit):
     """Same convention as before, so the CI shifts only via 1.96 -> norm.ppf."""
     np.testing.assert_allclose(plp_fit.ci, LEGACY_PLP_FIT_CI, rtol=CI_RTOL)
     assert not np.allclose(plp_fit.ci, LEGACY_PLP_FIT_CI, rtol=1e-9)
 
 
-def test_closed_form_result_reports_no_optimiser(plp_fit):
+def test_result_reports_no_general_optimiser(plp_fit):
     assert plp_fit.message == "closed-form estimate"
     assert plp_fit.success
 
@@ -188,6 +220,50 @@ def test_invalid_truncation_time_raises(data):
         model.fit(events, truncation_times=bad)
 
 
+def test_profile_solve_reduces_to_the_crow_form_for_equal_horizons(data):
+    """The generalisation must not perturb the case that was already correct.
+
+    With a common horizon the ratio (sum T^b logT)/(sum T^b) collapses to
+    log T and the score equation rearranges to N / sum sum log(T/t). Solving
+    numerically must land on exactly that.
+    """
+    events, trunc = data
+    n_events = sum(len(e) for e in events)
+    denominator = sum(
+        np.log(trunc[m]) - np.log(t)
+        for m, e in enumerate(events)
+        for t in e
+    )
+    crow_b = n_events / denominator
+    crow_a = n_events / np.sum(np.asarray(trunc, float) ** crow_b)
+
+    res = power_law_nhpp(0.02, 1.5).fit(events, truncation_times=trunc)
+    np.testing.assert_allclose(res.params, [crow_a, crow_b], rtol=1e-8)
+
+
+def test_profile_score_does_not_overflow_at_large_shape(data):
+    """Written naively, T**b is inf for even moderate b and the bracket
+    search hunts through nan."""
+    _, trunc = data
+    tau = np.asarray(trunc, float)
+    for b in [1.0, 50.0, 500.0, 5000.0]:
+        val = power_law_nhpp._profile_score(b, 100, 400.0, tau)
+        assert np.isfinite(val), f"profile score not finite at b={b}"
+
+
+def test_fit_raises_when_no_events_observed():
+    model = power_law_nhpp(0.02, 1.5)
+    with pytest.raises(ValueError, match="no events observed"):
+        model.fit([[], []], truncation_times=[10.0, 10.0])
+
+
+def test_fit_raises_when_shape_is_unidentifiable():
+    """Every event at its truncation time: the root runs off to infinity."""
+    model = power_law_nhpp(0.02, 1.5)
+    with pytest.raises(ValueError, match="cannot identify a shape"):
+        model.fit([[9.999999, 9.9999995]], truncation_times=[10.0])
+
+
 def test_numpy_truncation_times_do_not_raise(data):
     """`truncation_times != None` used to blow up on an ndarray."""
     events, trunc = data
@@ -197,20 +273,14 @@ def test_numpy_truncation_times_do_not_raise(data):
 
 
 # ------------------------------------------- known defect: unequal horizons --
-@pytest.mark.xfail(
-    reason="power_law_nhpp.fit uses the Crow closed form, which is the MLE "
-           "only when every asset shares a truncation time. Fixed in the "
-           "following commit by solving the profile score equation.",
-    strict=True,
-)
-def test_closed_form_is_the_mle_for_unequal_truncation_times():
+def test_fit_is_the_mle_for_unequal_truncation_times():
     """The score must vanish at a maximum-likelihood estimate.
 
-    With a common horizon the Crow form is exact and the score is ~1e-11. With
-    unequal horizons the ratio (sum T^b log T)/(sum T^b) no longer collapses to
-    log T, the returned estimate is not a stationary point, and the score is
-    large. Using the score rather than comparing likelihood values makes the
-    defect unambiguous: a non-zero gradient cannot be a maximum.
+    Previously this failed: the Crow closed form is the MLE only for a common
+    horizon, so with staggered horizons the returned estimate was not a
+    stationary point and the relative score was ~1e-2. Using the score rather
+    than comparing likelihood values makes it unambiguous -- a non-zero
+    gradient cannot be a maximum.
     """
     events, trunc = ds.nhpp_events_unequal_horizons()
     model = power_law_nhpp(0.02, 1.5)

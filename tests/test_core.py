@@ -47,7 +47,7 @@ def test_power_law_nhpp_fit_recovers_shape():
     n_assets = 40
     event_times = m.random_arrival_times(T, size=n_assets)
     truncation_times = [float(T)] * n_assets
-    p_hat, p_ci, p_cov = m.fit(event_times, truncation_times=truncation_times)
-    a_hat, b_hat = p_hat
+    res = m.fit(event_times, truncation_times=truncation_times)
+    a_hat, b_hat = res.params
     assert abs(b_hat - b_true) / b_true < 0.25
     assert a_hat > 0

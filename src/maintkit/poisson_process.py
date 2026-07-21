@@ -258,12 +258,9 @@ class power_law_nhpp(poisson_process):
             ndt_kwds=None,ci_method="transformed"):
         """Fit by maximum likelihood using the closed-form estimate.
 
-        The MLE is available analytically, so no optimiser runs; only the
+        The MLE reduces to a single equation in the shape parameter, so no
+        general-purpose optimiser runs; see :meth:`_profile_mle`. Only the
         Hessian is computed numerically, to obtain standard errors.
-
-        .. warning::
-           Unequal ``truncation_times`` are accepted but silently give a
-           non-MLE. See :meth:`_closed_form_estimate`. Fixed next commit.
 
         Parameters
         ----------
@@ -281,7 +278,7 @@ class power_law_nhpp(poisson_process):
         """
         event_times = self._validate_event_times(event_times)
         tau = self._resolve_truncation_times(event_times, truncation_times)
-        p_hat = self._closed_form_estimate(event_times, tau)
+        p_hat = self._profile_mle(event_times, tau)
 
         return result_at(
             lambda p: self.nnlf(p,event_times,truncation_times=truncation_times),
@@ -315,31 +312,68 @@ class power_law_nhpp(poisson_process):
                 tau.append(T)
         return tau
 
+    #: Upper limit of the shape-parameter bracket search. A root beyond this
+    #: means the data cannot identify a shape at all, not that b is large.
+    _MAX_SHAPE = 1e4
+
     @staticmethod
-    def _closed_form_estimate(event_times, tau):
-        r"""Crow closed-form estimate of ``(a, b)``.
+    def _profile_score(b, n_events, sum_log_t, tau):
+        r"""Score for :math:`b` after eliminating :math:`a`.
 
-        .. math::
-            \hat b = N \big/ \sum_m\sum_k \log(T_m / t_{mk}),
-            \qquad \hat a = N \big/ \sum_m T_m^{\hat b}
-
-        Only the MLE when all :math:`T_m` are equal -- the score equation
+        Substituting :math:`\hat a(b) = N/\sum_m T_m^b` into the likelihood
+        leaves a single equation in :math:`b`:
 
         .. math::
             N/b + S - N\frac{\sum_m T_m^b \log T_m}{\sum_m T_m^b} = 0
 
-        rearranges to the above only when the ratio collapses to
-        :math:`\log T`. Nothing enforces this, so unequal horizons silently
-        give a non-MLE (~12% off in ``a``). Fixed next commit.
+        The ratio is evaluated with weights :math:`(T_m/T_{max})^b \le 1`
+        rather than :math:`T_m^b` directly. Written the obvious way it
+        overflows for even moderate ``b`` (400**200 is inf), which turns the
+        bracket search into a hunt through nan.
         """
+        log_tau = np.log(tau)
+        w = np.exp(b * (log_tau - log_tau.max()))
+        return n_events/b + sum_log_t - n_events*np.sum(w*log_tau)/np.sum(w)
+
+    @classmethod
+    def _profile_mle(cls, event_times, tau):
+        r"""Maximum-likelihood estimate of ``(a, b)``.
+
+        Solves the profile score above for :math:`b` by bracketed root
+        finding, then recovers :math:`\hat a = N/\sum_m T_m^{\hat b}`.
+
+        When every :math:`T_m` is equal the ratio collapses to :math:`\log T`
+        and the root is exactly the Crow closed form
+        :math:`N/\sum_m\sum_k\log(T_m/t_{mk})`; this generalises that estimator
+        rather than replacing it.
+
+        A bracket always exists for identifiable data: the score tends to
+        :math:`+\infty` as :math:`b\to0^+`, and to
+        :math:`-\sum_m\sum_k\log(T_{max}/t_{mk}) < 0` as :math:`b\to\infty`.
+        """
+        tau = np.asarray(tau, dtype=float)
         n_events = sum(len(e) for e in event_times)
-        denominator = sum(
-            np.log(tau[m]) - np.log(t)
-            for m, events in enumerate(event_times)
-            for t in events
-        )
-        b_hat = n_events / denominator
-        a_hat = n_events / np.sum(np.asarray(tau, dtype=float) ** b_hat)
+        if n_events == 0:
+            raise ValueError(
+                "cannot fit: no events observed across any asset"
+            )
+        sum_log_t = sum(np.log(t) for events in event_times for t in events)
+
+        def score(b):
+            return cls._profile_score(b, n_events, sum_log_t, tau)
+
+        lo, hi = 1e-8, 1.0
+        while score(hi) > 0:
+            hi *= 2.0
+            if hi > cls._MAX_SHAPE:
+                raise ValueError(
+                    "the likelihood has no interior maximum in the shape "
+                    "parameter: every event coincides with its asset's "
+                    "truncation time, so the data cannot identify a shape"
+                )
+
+        b_hat = opt.brentq(score, lo, hi)
+        a_hat = n_events / np.sum(tau ** b_hat)
         return np.array([a_hat, b_hat])
     
     def nnlf_interval(self,p,ni,ins,cumulative=False):
