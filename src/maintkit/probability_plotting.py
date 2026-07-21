@@ -162,16 +162,29 @@ def empirical_mean_cumulative_function(event_times,suspension_times,plot=True,co
     else:
         return t,M_hat, M_LCL, M_UCL
 
+def _check_frozen_weibull(dist):
+    """Both plotting helpers need a frozen Weibull and nothing else."""
+    if not isinstance(dist,reliability_distribution_frozen):
+        raise TypeError(
+            "the distribution must be frozen first: call it with its "
+            "parameters, e.g. weibull()(beta, scale=eta)"
+        )
+    if not isinstance(dist.dist,weibull):
+        raise TypeError(
+            "only the Weibull is supported here, got "
+            f"{type(dist.dist).__name__}"
+        )
+
+
 def weibull_probability_plot(dist,data=None,ax=None,confidence_bounds=None,parameter_covariance=None,figsize=(7,7)):  
 
-    assert isinstance(dist,reliability_distribution_frozen),"Distribution must be frozen before using this function."
-    assert type(dist.dist) in [weibull], "Distribution not supported. Must be Weibull for now."
+    _check_frozen_weibull(dist)
         
     t = np.linspace( dist.ppf(1e-3),dist.ppf(1-1e-3),100 )
     Y = np.log10(-np.log(dist.reliability(t)))
 
     ############################ Nominal plot ##################################
-    if ax == None:
+    if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
 
     ax.semilogx(t,Y,linestyle="--",color="red",label="Distribution")
@@ -179,21 +192,44 @@ def weibull_probability_plot(dist,data=None,ax=None,confidence_bounds=None,param
     ax.set_ylabel(r"$F(t)$")
 
     if (data is not None):
-        assert isinstance(data,dict), "Data needs to be a dict with keys [""times"",""ecdf""]."
-        k = list(data.keys())
-        assert k[0] in ['times','ecdf'], "Data must be a dict with keys [""times"",""ecdf""]."
-        assert k[1] in ['times','ecdf'], "Data must be a dict with keys [""times"",""ecdf""]."
-        assert len(data['times'])==len(data['ecdf']), "time and Fhat lists must be the same length"
+        if not isinstance(data,dict):
+            raise TypeError(
+                f"data must be a dict with keys 'times' and 'ecdf', got "
+                f"{type(data).__name__}"
+            )
+        # The previous check looked at the first two keys and asked whether
+        # each was one of the two names, which passed for {'times', 'junk'}
+        # and raised IndexError for a dict with one key.
+        missing = {"times","ecdf"} - set(data)
+        if missing:
+            raise ValueError(f"data is missing the key(s) {sorted(missing)}")
+        if len(data['times']) != len(data['ecdf']):
+            raise ValueError(
+                f"data['times'] has {len(data['times'])} entries but "
+                f"data['ecdf'] has {len(data['ecdf'])}"
+            )
 
         Yd = np.log10(-np.log(1-data['ecdf']))
         ax.semilogx(data['times'],Yd,'.',color="blue",label="Data")
         plt.legend()
     
     ######################### confidence bounds ##########################
-    if confidence_bounds!=None:
-        assert confidence_bounds.lower() in ["time","reliability"], "confidence_bounds must be either ""Time"" or ""Reliability""."
-        assert isinstance(parameter_covariance,np.ndarray), "You must supply parameter_covariance to get confidence bounds"
-        assert parameter_covariance.shape[0]==2 and parameter_covariance.shape[1] == 2,"Parameter covariance must be 2-by-2"
+    if confidence_bounds is not None:
+        if confidence_bounds.lower() not in ["time","reliability"]:
+            raise ValueError(
+                "confidence_bounds must be 'time' or 'reliability', got "
+                f"{confidence_bounds!r}"
+            )
+        if not isinstance(parameter_covariance,np.ndarray):
+            raise TypeError(
+                "parameter_covariance is required for confidence bounds; pass "
+                "FitResult.cov"
+            )
+        if parameter_covariance.shape != (2,2):
+            raise ValueError(
+                "parameter_covariance must be 2-by-2 for a Weibull, got "
+                f"{parameter_covariance.shape}"
+            )
 
         RL,RU = weibull_reliability_confidence_interval(dist,t,parameter_covariance,kind=confidence_bounds,c=1.96) 
         FL,FU = np.log10(-np.log(RL)),np.log10(-np.log(RU))       
@@ -212,11 +248,13 @@ def weibull_probability_plot(dist,data=None,ax=None,confidence_bounds=None,param
 
 def weibull_reliability_confidence_interval(dist,t,p_cov,kind="Reliability",c=1.96):
         
-        assert type(dist.dist) is weibull and isinstance(dist,reliability_distribution_frozen),\
-            "The distribution must be a frozen Weibull distribution."
-        assert kind.lower() in ["time",'reliability'],"kind must be ""time"" or ""reliability""."
-        assert all([(t[ii+1]-t[ii])>=0 for ii in range(len(t)-1)]), "time vector must be sorted"
-        assert t[0]>=0, "Negative time doesn't make sense!"
+        _check_frozen_weibull(dist)
+        if kind.lower() not in ["time","reliability"]:
+            raise ValueError(f"kind must be 'time' or 'reliability', got {kind!r}")
+        if np.any(np.diff(t) < 0):
+            raise ValueError("t must be non-decreasing")
+        if t[0] < 0:
+            raise ValueError(f"t must be non-negative, starts at {t[0]}")
         if t[0] == 0:
             print('Warning: inserting nan for t==0 since logM(t) is undefined.')
             prependNaN = True

@@ -36,8 +36,12 @@ class interval_replacement:
         return time_grid,H
     
     def optimal_timing(self,T=None,tol=1e-10,dt=None):
-        assert self.cpm is not None, "Define the cost of pm (cpm) before using this function."
-        assert self.cpm is not None, "Define the cost of failure (cf) before using this function."
+        # The second check tested cpm twice, so a missing cf was never caught
+        # here and surfaced later inside the cost arithmetic instead.
+        if self.cpm is None:
+            raise ValueError("set the cost of preventive maintenance (cpm) before optimising")
+        if self.cf is None:
+            raise ValueError("set the cost of failure (cf) before optimising")
 
         t,H = self.expected_number_of_failures(T=T,tol=tol,dt=dt)
         

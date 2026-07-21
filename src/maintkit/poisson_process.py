@@ -8,6 +8,23 @@ import numdifftools as ndt
 from maintkit.inference import fit_mle, result_at
 from maintkit.transforms import Log
 
+def _check_list_of_lists(values,name):
+    """One list per asset, each holding that asset's values."""
+    if not isinstance(values,list):
+        raise TypeError(
+            f"{name} must be a list of lists, one per asset, got "
+            f"{type(values).__name__}"
+        )
+    if len(values) == 0:
+        raise ValueError(f"{name} is empty, so there is no data to fit")
+    bad = [i for i,v in enumerate(values) if not isinstance(v,list)]
+    if bad:
+        raise TypeError(
+            f"{name} must be a list of lists, one per asset; entries "
+            f"{bad} are not lists"
+        )
+
+
 class poisson_process:
 
     #: Transform used when fitting. Both power-law parameters are positive.
@@ -188,12 +205,18 @@ class power_law_nhpp(poisson_process):
     
     def random_arrival_times(self,T,t0=0,size=1):
 
-        msg = "Suspension times must be either an int>0 or a list of len == size"
         if isinstance(T,int):
             T = [T]*size
-        else:
-            assert isinstance(T,list), msg
-            assert len(T) == size, msg
+        elif not isinstance(T,list):
+            raise TypeError(
+                "T must be an int (one suspension time for every asset) or a "
+                f"list of them, got {type(T).__name__}"
+            )
+        elif len(T) != size:
+            raise ValueError(
+                f"got {len(T)} suspension times for size={size}; pass one per "
+                "asset, or a single int for all of them"
+            )
 
         t = [ [] for m in range(size)]
         a,b = [*self.parameters]
@@ -395,13 +418,8 @@ class power_law_nhpp(poisson_process):
     
     def nnlf_interval(self,p,ni,ins,cumulative=False):
         
-        assert isinstance(ni,list), "number of events must be a list of lists"
-        assert len(ni)>0, "number of events must be a list of lists"
-        assert all([isinstance(ni[ii],list) for ii in range(len(ni))]), "number of events must be a list of lists"
-            
-        assert isinstance(ins,list), "inspections must be a list of lists"
-        assert len(ins)>0, "inspections must be a list of lists"
-        assert all([isinstance(ins[ii],list) for ii in range(len(ins))]), "inspections must be a list of lists"
+        _check_list_of_lists(ni,"number of events")
+        _check_list_of_lists(ins,"inspections")
         
         model = self._with_parameters(p)
 
