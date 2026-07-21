@@ -21,7 +21,11 @@ from maintkit.distributions import (
     expdist,
     weibull,
 )
-from maintkit.poisson_process import poisson_process, power_law_nhpp
+# Only power_law_nhpp is re-exported. Exporting the base class too would
+# bind the name `maintkit.poisson_process` to the class and shadow the
+# module of the same name, so `import maintkit.poisson_process as rp`
+# would hand back the class. Import the base class from the submodule.
+from maintkit.poisson_process import power_law_nhpp
 from maintkit.imperfect_maintenance import imperfect_pm_minimal_cm
 from maintkit.maintenance_optimization import interval_replacement
 from maintkit.probability_plotting import (
@@ -50,7 +54,6 @@ __all__ = [
     "reliability_from_hazard",
     "expdist",
     "weibull",
-    "poisson_process",
     "power_law_nhpp",
     "imperfect_pm_minimal_cm",
     "interval_replacement",
