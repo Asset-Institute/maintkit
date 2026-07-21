@@ -201,12 +201,12 @@ class RBM(Wiener):
         L = np.zeros(len(t))
         guessesL = np.zeros(len(t))
         for i,ti in enumerate(t):
-            U[i] = fsolve( lambda x: (1-alpha)-self.transition_distribution(x,ti,x0,type="cdf"),guessesU[i])
-            L[i] = fsolve( lambda x: alpha-self.transition_distribution(x,ti,x0,type="cdf"),guessesL[i])
+            # fsolve returns a length-1 array, not a scalar. Assigning it into
+            # a single slot was deprecated for years and is an error in numpy 2.
+            U[i] = fsolve( lambda x: (1-alpha)-self.transition_distribution(x,ti,x0,type="cdf"),guessesU[i])[0]
+            L[i] = fsolve( lambda x: alpha-self.transition_distribution(x,ti,x0,type="cdf"),guessesL[i])[0]
         
         return L,U
 
-
 # Backwards-compatible alias for the previous (misspelled) class name.
 weiner = Wiener
-
