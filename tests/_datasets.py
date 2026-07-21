@@ -120,6 +120,52 @@ def imperfect_maintenance_data(a=0.02, b=1.5, rho=0.4, n_pm=6,
     return np.array(failures), np.array(pm_times), truncation_time
 
 
+def imperfect_maintenance_fleet(a=0.02, b=1.5, rho=0.4, seed=909):
+    """Failure times for a fleet with a DIFFERENT PM schedule per asset.
+
+    Returns ``(failures, pm_times, truncation_times)``, each a list with one
+    entry per asset.
+
+    The schedules and horizons are deliberately ragged. A fleet where every
+    asset shared one schedule could not detect an indexing bug that reused
+    asset 0's edges for the rest -- the same blind spot equal horizons left in
+    the NHPP data above. One asset is given no maintenance at all, and another
+    is observed too briefly to be likely to fail, so the no-PM and no-failure
+    paths are both exercised.
+    """
+    rng = np.random.default_rng(seed)
+    schedules = [
+        [50.0, 100.0, 150.0, 200.0],     # regular
+        [70.0, 190.0],                   # sparse and uneven
+        [],                              # never maintained
+        [30.0, 60.0, 90.0, 120.0, 150.0, 180.0],
+        [1.5],                           # observed too briefly to be likely to fail
+    ]
+    truncation_times = [250.0, 220.0, 180.0, 200.0, 4.0]
+
+    failures = []
+    for pm, horizon in zip(schedules, truncation_times):
+        edges = [0.0] + list(pm) + [float(horizon)]
+        if any(hi <= lo for lo, hi in zip(edges[:-1], edges[1:])):
+            raise ValueError(
+                f"schedule {pm} is not strictly inside (0, {horizon}); the "
+                "intervals would run backwards and the sample would be junk"
+            )
+        times = []
+        for lo, hi in zip(edges[:-1], edges[1:]):
+            t = lo - rho * lo
+            while True:
+                u = rng.uniform()
+                t = (-np.log(1.0 - u) / a + t**b) ** (1.0 / b)
+                real = t + rho * lo
+                if real >= hi:
+                    break
+                times.append(float(real))
+        failures.append(times)
+
+    return failures, [list(s) for s in schedules], truncation_times
+
+
 def wiener_path(n_steps=400, horizon=50.0, mu=0.5, sigma=1.0, seed=707):
     """Single Wiener path. Returns (t, x) as lists-of-lists (one run)."""
     rng = np.random.default_rng(seed)

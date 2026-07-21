@@ -162,7 +162,7 @@ def test_fit_a_is_at_its_conditional_maximum(fit_result, data):
     """a is concentrated out, so a = N / total_exposure must hold exactly."""
     failures, pm, trunc = data
     m = imperfect_pm_minimal_cm(A, B, RHO)
-    edges = m._interval_edges(pm, trunc)
+    _, edges = m._prepare(failures, pm, trunc)
     a_hat, b_hat, rho_hat = fit_result.params
     expected = len(failures) / m._total_exposure(b_hat, rho_hat, edges)
     assert a_hat == pytest.approx(expected, rel=1e-12)
@@ -191,6 +191,132 @@ def test_alpha_widens_the_interval(data):
     wide = m.fit(failures, pm, trunc, alpha=0.01)
     assert np.all(wide.ci[:, 0] < narrow.ci[:, 0])
     assert np.all(wide.ci[:, 1] > narrow.ci[:, 1])
+
+
+# ---------------------------------------------------------- many assets ----
+@pytest.fixture(scope="module")
+def fleet():
+    return ds.imperfect_maintenance_fleet()
+
+
+def test_promoting_one_asset_leaves_the_likelihood_untouched(data):
+    """A flat sequence and a one-entry list must agree to the last bit.
+
+    This is what makes the recorded reference values still meaningful: the
+    single-asset case is not merely close after the change, it is identical.
+    """
+    failures, pm, trunc = data
+    m = imperfect_pm_minimal_cm(A, B, RHO)
+    for p in [(0.02, 1.5, 0.4), (0.0206, 1.5283, 0.6377), (0.5, 0.8, 0.05)]:
+        flat = m.nnlf(p, failures, pm, trunc)
+        listed = m.nnlf(p, [failures], [pm], [trunc])
+        assert flat == listed
+
+
+def test_two_copies_of_one_asset_double_the_likelihood(data):
+    """Assets are independent given the parameters, so -l is additive."""
+    failures, pm, trunc = data
+    m = imperfect_pm_minimal_cm(A, B, RHO)
+    p = (0.02, 1.5, 0.4)
+    one = m.nnlf(p, [failures], [pm], [trunc])
+    two = m.nnlf(p, [failures, failures], [pm, pm], [trunc, trunc])
+    assert two == pytest.approx(2.0 * one, rel=1e-12)
+
+
+def test_duplicated_asset_gives_the_same_estimates(data, fit_result):
+    """Twice the data at the same parameters: estimates hold, errors shrink."""
+    failures, pm, trunc = data
+    doubled = imperfect_pm_minimal_cm(A, B, RHO).fit(
+        [failures, failures], [pm, pm], [trunc, trunc]
+    )
+    np.testing.assert_allclose(doubled.params, fit_result.params, rtol=1e-5)
+    # Twice the information, so standard errors fall by about sqrt(2).
+    np.testing.assert_allclose(doubled.se, fit_result.se / np.sqrt(2.0), rtol=1e-3)
+
+
+def test_fleet_with_ragged_schedules_fits(fleet):
+    failures, pm, trunc = fleet
+    result = imperfect_pm_minimal_cm(A, B, RHO).fit(failures, pm, trunc)
+    assert np.all(np.isfinite(result.params))
+    assert np.all(result.params[:2] > 0)
+    assert 0.0 < result.params[2] < 1.0
+    assert result.cov.shape == (3, 3)
+
+
+def test_fleet_recovers_the_generating_parameters(fleet):
+    """Loose bounds -- this checks the fleet likelihood is assembled right,
+    not that 226 failures pin three parameters precisely."""
+    failures, pm, trunc = fleet
+    result = imperfect_pm_minimal_cm(A, B, RHO).fit(failures, pm, trunc)
+    a_hat, b_hat, rho_hat = result.params
+    assert 0.005 < a_hat < 0.08
+    assert 1.0 < b_hat < 2.2
+    assert 0.0 < rho_hat < 1.0
+
+
+def test_asset_with_no_failures_still_counts(fleet):
+    """It contributes exposure but no events, so dropping it moves the fit."""
+    failures, pm, trunc = fleet
+    assert not failures[4], "fixture no longer has a failure-free asset"
+    m = imperfect_pm_minimal_cm(A, B, RHO)
+    p = (0.02, 1.5, 0.4)
+    with_it = m.nnlf(p, failures, pm, trunc)
+    without = m.nnlf(p, failures[:4], pm[:4], trunc[:4])
+    assert with_it != without
+
+
+def test_asset_with_no_maintenance_is_allowed(fleet):
+    failures, pm, trunc = fleet
+    assert not pm[2], "fixture no longer has an unmaintained asset"
+    result = imperfect_pm_minimal_cm(A, B, RHO).fit(failures, pm, trunc)
+    assert np.all(np.isfinite(result.params))
+
+
+def test_scalar_truncation_time_applies_to_every_asset(data):
+    failures, pm, trunc = data
+    m = imperfect_pm_minimal_cm(A, B, RHO)
+    p = (0.02, 1.5, 0.4)
+    scalar = m.nnlf(p, [failures, failures], [pm, pm], trunc)
+    listed = m.nnlf(p, [failures, failures], [pm, pm], [trunc, trunc])
+    assert scalar == listed
+
+
+def test_asset_counts_must_agree(data):
+    failures, pm, trunc = data
+    m = imperfect_pm_minimal_cm(A, B, RHO)
+    with pytest.raises(ValueError, match="own schedule"):
+        m.fit([failures, failures], [pm], trunc)
+
+
+def test_wrong_number_of_truncation_times_is_rejected(data):
+    failures, pm, trunc = data
+    m = imperfect_pm_minimal_cm(A, B, RHO)
+    with pytest.raises(ValueError, match="one per asset"):
+        m.fit([failures, failures], [pm, pm], [trunc, trunc, trunc])
+
+
+def test_mixing_numbers_and_sequences_is_rejected(data):
+    """[array, 50.0] is a typo, not a fleet. Say so rather than guessing."""
+    failures, pm, trunc = data
+    m = imperfect_pm_minimal_cm(A, B, RHO)
+    with pytest.raises(TypeError, match="mixes numbers and sequences"):
+        m.fit(failures, [pm, 50.0], trunc)
+
+
+def test_fleet_with_no_failures_anywhere_is_rejected(data):
+    failures, pm, trunc = data
+    m = imperfect_pm_minimal_cm(A, B, RHO)
+    with pytest.raises(ValueError, match="no failures observed"):
+        m.fit([[], []], [pm, pm], trunc)
+
+
+def test_validation_names_the_offending_asset(data):
+    """With a fleet, "a failure is out of range" is not enough to act on."""
+    failures, pm, trunc = data
+    m = imperfect_pm_minimal_cm(A, B, RHO)
+    late = list(failures) + [trunc + 10.0]
+    with pytest.raises(ValueError, match="asset 1"):
+        m.fit([failures, late], [pm, pm], trunc)
 
 
 # -------------------------------------------------- repair factor bounds ----
