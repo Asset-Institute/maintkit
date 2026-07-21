@@ -1,22 +1,9 @@
-"""Core functionality tests: fitting paths and parameter transforms."""
+"""Core functionality tests: fitting paths."""
 import numpy as np
 import scipy.stats as sps
 
 from maintkit.distributions import expdist, weibull
 from maintkit.poisson_process import power_law_nhpp
-from maintkit.utilities import _parameter_transform_log, _parameter_transform_identity
-
-
-def test_parameter_transform_log_roundtrip():
-    x = np.array([0.01, 2.5])
-    fwd = _parameter_transform_log(x, direction="forward")
-    back = _parameter_transform_log(fwd, direction="inverse")
-    assert np.allclose(back, x)
-
-
-def test_parameter_transform_identity_roundtrip():
-    x = np.array([1.0, 2.0, 3.0])
-    assert np.allclose(_parameter_transform_identity(x), x)
 
 
 def test_expdist_closed_form_matches_analytic():

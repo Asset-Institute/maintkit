@@ -6,7 +6,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numdifftools as ndt
-from maintkit.utilities import _parameter_transform_log,_parameter_transform_identity
 from maintkit.inference import fit_mle, result_from_covariance
 from maintkit.transforms import Identity, Log
 
@@ -109,10 +108,6 @@ class reliability_distribution(stats.rv_continuous):
     def freeze(self, *args, **kwds):
         return reliability_distribution_frozen(self, *args, **kwds) # freeze using new reliabilty class, otherwise new functions won't be defined (e.g. reliability)
     
-    def transform_scale(self,x,likelihood_hessian=None,direction="inverse"):
-        # define as unity transform unless overwritten
-         return _parameter_transform_identity(x,likelihood_hessian=likelihood_hessian,\
-            direction=direction)
 
 # rv_continuous_frozen, not rv_frozen: scipy splits the two, and rv_frozen
 # carries cdf, sf and ppf but not pdf or logpdf. Inheriting from it gives a
@@ -334,7 +329,7 @@ class expdist(reliability_distribution):
 class weibull(reliability_distribution):
 
     # eta (scale) and beta (shape) are both strictly positive, so fit on the
-    # log scale. Matches the legacy transform_scale override below.
+    # log scale.
     parameter_transform = Log()
     parameter_names = ("eta", "beta")
 
@@ -425,9 +420,6 @@ class weibull(reliability_distribution):
 
         return -np.array([dl_deta, dl_dbeta])   # nnlf = -loglikelihood
 
-    def transform_scale(self,x,likelihood_hessian=None,direction="inverse"):
-        return _parameter_transform_log(x,likelihood_hessian=likelihood_hessian,\
-            direction=direction)
 
     def anderson_darling_test(self,ti,observed="all"):
         """

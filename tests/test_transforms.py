@@ -51,9 +51,10 @@ def test_log_covariance_closed_form():
     assert np.allclose(Log().covariance(y, np.eye(2)), np.diag([9.0, 49.0]))
 
 
-def test_covariance_matches_legacy_convention():
-    """Guards the P2 migration: covariances must not change when models move
-    from _parameter_transform_log to Transform.covariance."""
+def test_covariance_matches_the_original_convention():
+    """The sandwich the package used before Transform existed, written out here
+    rather than imported, so it stays a fixed reference even though the helper
+    that implemented it has been deleted."""
     y = np.array([np.log(3.0), np.log(7.0)])
     H = np.array([[4.0, 1.0], [1.0, 3.0]])
     J = np.diag(np.exp(y))

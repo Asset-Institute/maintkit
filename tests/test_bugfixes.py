@@ -5,7 +5,6 @@ import pytest
 from maintkit.poisson_process import poisson_process, power_law_nhpp
 from maintkit.distributions import expdist
 from maintkit.wiener import Wiener
-from maintkit.utilities import _parameter_transform_log
 
 
 class ConstPP(poisson_process):
