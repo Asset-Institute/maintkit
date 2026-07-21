@@ -1,9 +1,6 @@
-from scipy import stats as stats
-from scipy import optimize as opt
-from scipy.integrate import quad
 import numpy as np
-import numdifftools as ndt
-from maintkit.utilities import _parameter_transform_log
+from maintkit.inference import fit_mle, result_at
+from maintkit.transforms import Composite, Log, Logit
 # Import the class directly rather than `import maintkit.poisson_process as rpp`.
 # The module and the class share the name `poisson_process`, so the package
 # __init__ re-binds the attribute `maintkit.poisson_process` to the *class*,
@@ -11,18 +8,41 @@ from maintkit.utilities import _parameter_transform_log
 from maintkit.poisson_process import power_law_nhpp
 
 class imperfect_pm_minimal_cm:
-    # Uses a proportinal age reduction modification of a power-law NHPP for now. 
-    # Only works for a single asset at the moment. 
+    """Power-law NHPP with proportional age reduction at each PM.
+
+    Failures receive minimal repair; each PM sets the age clock back by
+    ``rho`` times the time of the preceding PM. Handles a single asset.
+    """
+
+    #: Transform for the full parameter vector (a, b, rho).
+    parameter_transform = Composite([Log(), Log(), Logit()])
+
+    #: Transform for the reduced problem (b, rho), with a concentrated out.
+    _reduced_transform = Composite([Log(), Logit()])
+
+    parameter_names = ("a", "b", "rho")
 
     def __init__(self,a,b,rho):
         self.baseline_model = power_law_nhpp(a,b)
-        assert rho<=1.0 and rho>=0, "Repair factor must be between 0 and 1 (inclusive)"
-        self.repair_factor = rho
-    
+        self.repair_factor = self._check_repair_factor(rho)
+
     def set_parameters(self,a,b,r):
         self.baseline_model = power_law_nhpp(a,b)
-        assert r<=1.0 and r>=0, "Repair factor must be between 0 and 1 (inclusive)"
-        self.repair_factor = r
+        self.repair_factor = self._check_repair_factor(r)
+
+    @staticmethod
+    def _check_repair_factor(rho):
+        """Repair factor must lie in [0, 1].
+
+        Both endpoints are meaningful models: 0 is no age reduction, 1 is
+        as-good-as-new. Raises rather than asserts because ``python -O`` strips
+        assert statements, which would let an out-of-range value through
+        silently.
+        """
+        rho = float(rho)
+        if not 0.0 <= rho <= 1.0:
+            raise ValueError(f"repair factor must be in [0, 1], got {rho}")
+        return rho
 
     def _last_pm(self,t,pm_times):
         # returns last PM before all time points
@@ -93,6 +113,20 @@ class imperfect_pm_minimal_cm:
                 f"{truncation_time}, the latest being {late.max()}"
             )
         return failure_times
+
+    def _total_exposure(self, b, rho, edges):
+        """Cumulative intensity over the whole observation window, with a = 1.
+
+        Summed over every interval, so
+
+            cumulative_intensity(truncation_time) = a * total_exposure
+
+        Leaving ``a`` out is what makes it reusable: it is the denominator of
+        the closed-form estimate ``a_hat = N / total_exposure``. Shared by nnlf, 
+        reduced_nnlf and fit so the three cannot drift apart.
+        """
+        s = self._last_pm(edges, edges)
+        return np.sum((edges - rho*s)**b - ((1.0 - rho)*s)**b)
 
     def intensity(self,t,pm_times):
         """Failure intensity at each time in ``t``.
@@ -190,8 +224,8 @@ class imperfect_pm_minimal_cm:
         """Negative log-likelihood for parameters ``p = (a, b, rho)``.
 
         ``pm_times`` holds the maintenance actions; ``truncation_time`` is when
-        observation stopped. The compensator runs over the periods ending at
-        each PM and then at the truncation time.
+        observation stopped. The exposure runs over the periods ending at each
+        PM and then at the truncation time.
         """
         a,b,r = p
         failure_times = np.atleast_1d(np.asarray(failure_times, dtype=float))
@@ -199,10 +233,9 @@ class imperfect_pm_minimal_cm:
         N = failure_times.size
 
         last_pm_before_failure = self._last_pm(failure_times,edges)
-        last_pm_before_edge = self._last_pm(edges,edges)
 
         term1 = np.sum( np.log(failure_times-r*last_pm_before_failure) )
-        term2 = np.sum( (edges-r*last_pm_before_edge)**b - ((1-r)*last_pm_before_edge)**b)
+        term2 = self._total_exposure(b, r, edges)
         like = N*np.log(a)+N*np.log(b) + (b-1)*term1 - a*term2
         return -like
 
@@ -215,16 +248,22 @@ class imperfect_pm_minimal_cm:
         N = failure_times.size
 
         last_pm_before_failure = self._last_pm(failure_times,edges)
-        last_pm_before_edge = self._last_pm(edges,edges)
 
-        term1 = np.sum( (edges-r*last_pm_before_edge)**b - ((1-r)*last_pm_before_edge)**b )
+        term1 = self._total_exposure(b, r, edges)
         term2 = np.sum( np.log(failure_times-r*last_pm_before_failure) )
         like = N*np.log(b) + N*np.log(N) - N*np.log(term1) + (b-1)*term2 - N
 
         return -like
     
-    def fit(self,failure_times,pm_times,truncation_time,ndt_kwds={}):
+    def fit(self,failure_times,pm_times,truncation_time,p0=None,*,alpha=0.05,
+            ndt_kwds=None,optimizer_kwds=None,ci_method="transformed"):
         """Fit ``(a, b, rho)`` by maximum likelihood.
+
+        Runs in two steps. ``a`` has a closed-form conditional maximum, so it
+        is concentrated out and only ``(b, rho)`` are optimised. ``a`` is then
+        recovered and the covariance comes from the Hessian of the full
+        three-parameter likelihood at that point -- the reduced problem cannot
+        supply it, since it has no ``a`` to be uncertain about.
 
         Parameters
         ----------
@@ -235,34 +274,60 @@ class imperfect_pm_minimal_cm:
             ``(0, truncation_time)``. Do not include 0.
         truncation_time : float
             When observation stopped.
+        p0 : array_like, optional
+            Starting values for ``(b, rho)`` only -- two entries, not three.
+            ``a`` needs no starting value because it is never optimised.
+            Defaults to ``[1.0, 0.5]``.
+        alpha : float
+            Significance level; 0.05 gives 95% intervals.
+
+        Returns
+        -------
+        FitResult
+            ``params`` is ``(a, b, rho)``.
         """
         failure_times = self._check_failure_times(failure_times, truncation_time)
-        self._interval_edges(pm_times, truncation_time)   # validate before fitting
-
-        transform = lambda u: np.r_[np.log(u[0:-1]), np.log(u[-1]/(1-u[-1]))]
-        inverse_transform = lambda u: np.r_[ np.exp(u[0:-1]), 1/(1+np.exp(-u[-1])) ]
-        y0 = transform([1,0.5])
-        robj = lambda x: self.reduced_nnlf(inverse_transform(x),failure_times,pm_times,truncation_time)
-        result = opt.minimize(robj,y0)
-        y_hat = result.x
-        b_hat,r_hat = inverse_transform(y_hat)
-
         edges = self._interval_edges(pm_times, truncation_time)
-        s_edges = self._last_pm(edges, edges)
-        a_hat = len(failure_times)/np.sum( (edges-r_hat*s_edges)**b_hat
-                                            -((1-r_hat)*s_edges)**b_hat )
-        
-        p_hat = [a_hat,b_hat,r_hat]
-        log_p_hat = transform(p_hat)
-        full_obj = lambda x: self.nnlf(inverse_transform(x),failure_times,pm_times,truncation_time)
-        H = ndt.Hessian(full_obj,**ndt_kwds)(log_p_hat)
-        log_p_cov = np.linalg.inv(H)
-        s = np.sqrt(np.diag(log_p_cov))
-        p_ci =  log_p_hat +1.96*np.array([-s,s]) # log p_ci initially
-        p_ci[0,:] = inverse_transform(p_ci[0,:])
-        p_ci[1,:] = inverse_transform(p_ci[1,:])
 
-        return p_hat,p_ci
+        p0 = [1.0, 0.5] if p0 is None else np.atleast_1d(
+            np.asarray(p0, dtype=float)
+        )
+        if len(p0) != 2:
+            raise ValueError(
+                f"p0 must hold starting values for (b, rho) only, so two "
+                f"entries; got {len(p0)}. `a` is concentrated out and is not "
+                "optimised."
+            )
+
+        # Step 1: optimise the reduced likelihood over (b, rho).
+        # fit_mle also returns a covariance for these two, which is discarded:
+        # the reported uncertainty must come from the full likelihood below.
+        profile = fit_mle(
+            lambda q: self.reduced_nnlf(
+                q, failure_times, pm_times, truncation_time
+            ),
+            p0,
+            transform=self._reduced_transform,
+            optimizer_kwds=optimizer_kwds,
+            ndt_kwds=ndt_kwds,
+        )
+        b_hat, rho_hat = profile.params
+
+        # Step 2: recover a at its conditional maximum.
+        a_hat = failure_times.size / self._total_exposure(b_hat, rho_hat, edges)
+
+        # Step 3: covariance from the full three-parameter likelihood.
+        return result_at(
+            lambda p: self.nnlf(p, failure_times, pm_times, truncation_time),
+            [a_hat, b_hat, rho_hat],
+            transform=self.parameter_transform,
+            alpha=alpha,
+            names=self.parameter_names,
+            ndt_kwds=ndt_kwds,
+            ci_method=ci_method,
+            success=profile.success,
+            message=profile.message,
+        )
 
 
     

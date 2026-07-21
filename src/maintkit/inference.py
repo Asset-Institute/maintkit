@@ -314,10 +314,17 @@ def hessian_at(objective, p_hat, *, transform=None, ndt_kwds=None):
 
 
 def result_at(objective, p_hat, *, transform=None, alpha=0.05, names=None,
-              ndt_kwds=None, ci_method="transformed"):
+              ndt_kwds=None, ci_method="transformed",
+              success=True, message="closed-form estimate"):
     """Build a :class:`FitResult` at a known (e.g. closed-form) estimate.
 
     Skips the optimiser entirely; only the Hessian is computed numerically.
+
+    ``success`` and ``message`` are settable because the estimate does not
+    always come from a closed form. A profile likelihood, for instance,
+    optimises a reduced problem and then evaluates the Hessian of the full one
+    here, and the convergence status of that earlier step needs carrying
+    through rather than being replaced by a default.
     """
     transform = Identity() if transform is None else transform
     y_hat, hessian = hessian_at(
@@ -326,6 +333,6 @@ def result_at(objective, p_hat, *, transform=None, alpha=0.05, names=None,
     return _build_result(
         y_hat, hessian, transform,
         alpha=alpha, nnlf_value=objective(np.atleast_1d(np.asarray(p_hat, float))),
-        success=True, message="closed-form estimate",
+        success=success, message=message,
         names=names, ci_method=ci_method,
     )
