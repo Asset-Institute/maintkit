@@ -78,13 +78,15 @@ def _imperfect_maintenance_fit():
 def _wiener_estimate():
     from maintkit.wiener import Wiener
     t, x = ds.wiener_path()
-    return Wiener(mu=0.5, sigma=1.0).estimate_parameters(t, x)
+    return Wiener(mu=0.5, sigma=1.0).fit(t, x)
 
 
 def _rbm_estimate():
     from maintkit.wiener import RBM
-    t, x = ds.wiener_path()
-    return RBM(0.5, 1.0).estimate_parameters(t, x)
+    # reflected_path, not wiener_path: RBM cannot produce a negative value, and
+    # wiener_path contains several.
+    t, x = ds.reflected_path()
+    return RBM(0.5, 1.0).fit(t, x)
 
 
 CASES = {
@@ -96,8 +98,8 @@ CASES = {
     "power_law_nhpp.fit": _power_law_nhpp_fit,
     "power_law_nhpp.fit_interval": _power_law_nhpp_fit_interval,
     "imperfect_pm_minimal_cm.fit": _imperfect_maintenance_fit,
-    "Wiener.estimate_parameters": _wiener_estimate,
-    "RBM.estimate_parameters": _rbm_estimate,
+    "Wiener.fit": _wiener_estimate,
+    "RBM.fit": _rbm_estimate,
 }
 
 

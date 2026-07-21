@@ -174,3 +174,27 @@ def wiener_path(n_steps=400, horizon=50.0, mu=0.5, sigma=1.0, seed=707):
     dx = rng.normal(loc=mu * dt, scale=sigma * np.sqrt(dt))
     x = np.concatenate([[0.0], np.cumsum(dx)])
     return [t.tolist()], [x.tolist()]
+
+
+def reflected_path(n_steps=400, horizon=50.0, mu=0.5, sigma=1.0, seed=717):
+    """Single reflected Brownian path. Returns (t, x) as lists-of-lists.
+
+    ``wiener_path`` goes negative, which RBM cannot produce: the process is
+    confined to ``[0, inf)``, so a negative observation has zero density and
+    the log-likelihood is ``-inf`` there. Fitting RBM to that data is not a
+    hard case, it is an impossible one.
+
+    Built with the Lindley recursion
+    ``X[k+1] = max(0, X[k] + mu*dt + sigma*sqrt(dt)*Z)``, the standard discrete
+    approximation to reflected Brownian motion, so the result is non-negative
+    by construction.
+    """
+    rng = np.random.default_rng(seed)
+    t = np.linspace(0.0, horizon, n_steps)
+    dt = np.diff(t)
+    z = rng.normal(size=dt.size)
+    x = np.zeros(n_steps)
+    for k in range(1, n_steps):
+        step = mu * dt[k - 1] + sigma * np.sqrt(dt[k - 1]) * z[k - 1]
+        x[k] = max(0.0, x[k - 1] + step)
+    return [t.tolist()], [x.tolist()]

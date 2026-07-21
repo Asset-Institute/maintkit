@@ -35,7 +35,7 @@ from maintkit.probability_plotting import (
     weibull_probability_plot,
     weibull_reliability_confidence_interval,
 )
-from maintkit.wiener import Wiener, RBM, weiner
+from maintkit.wiener import Wiener, RBM
 from maintkit.inference import (
     FitResult,
     ConvergenceWarning,
@@ -64,7 +64,6 @@ __all__ = [
     "weibull_reliability_confidence_interval",
     "Wiener",
     "RBM",
-    "weiner",
     "FitResult",
     "ConvergenceWarning",
     "fit_mle",

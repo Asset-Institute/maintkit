@@ -4,7 +4,7 @@ import pytest
 
 from maintkit.poisson_process import poisson_process, power_law_nhpp
 from maintkit.distributions import expdist
-from maintkit.wiener import Wiener, weiner
+from maintkit.wiener import Wiener
 from maintkit.utilities import _parameter_transform_log
 
 
@@ -64,16 +64,15 @@ def test_expdist_fit_with_array_censoring():
     assert np.isclose(res.params[0], ti.sum() / r)
 
 
-def test_wiener_alias_and_symmetric_covariance():
-    assert weiner is Wiener
+def test_wiener_covariance_is_symmetric():
     w = Wiener(mu=0.5, sigma=1.0)
     np.random.seed(0)
     times = list(np.linspace(0, 50, 200))
     x = w.simulate(times, num_samples=1)
-    mu, sigma, p_cov = w.estimate_parameters([times], [x[0].tolist()])
-    assert np.allclose(p_cov, p_cov.T)          # symmetric sandwich J.T Hi J
-    assert np.all(np.diag(p_cov) > 0)
-    assert abs(mu - 0.5) < 0.3
+    res = w.fit([times], [x[0].tolist()])
+    assert np.allclose(res.cov, res.cov.T)
+    assert np.all(np.diag(res.cov) > 0)
+    assert abs(res.params[0] - 0.5) < 0.3
 
 
 # ------------------------------------------------- frozen distribution plot ----
