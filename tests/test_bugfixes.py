@@ -74,3 +74,45 @@ def test_wiener_alias_and_symmetric_covariance():
     assert np.allclose(p_cov, p_cov.T)          # symmetric sandwich J.T Hi J
     assert np.all(np.diag(p_cov) > 0)
     assert abs(mu - 0.5) < 0.3
+
+
+# ------------------------------------------------- frozen distribution plot ----
+@pytest.mark.parametrize(
+    "kind", ["pdf", "cdf", "reliability", "hazard", "conditional_reliability"]
+)
+def test_every_plot_type_works(kind):
+    """Two bugs met here.
+
+    The frozen class inherited from ``rv_frozen``, which has no ``pdf`` -- the
+    density lives on ``rv_continuous_frozen``. And ``plot`` built its dispatch
+    table out of bound methods, so asking for any curve looked up all five and
+    hit the missing one regardless of what was requested.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    from maintkit.distributions import weibull
+
+    dist = weibull()(2.0, scale=100.0)
+    kwds = {"t0": 10.0} if kind == "conditional_reliability" else {}
+    ax = dist.plot(type=kind, **kwds)
+    line, = ax.get_lines()
+    assert np.all(np.isfinite(line.get_ydata()))
+
+
+def test_frozen_distribution_has_a_density():
+    from maintkit.distributions import weibull
+    dist = weibull()(2.0, scale=100.0)
+    assert hasattr(dist, "pdf")
+    assert dist.pdf(50.0) > 0
+
+
+def test_plot_rejects_an_unknown_type():
+    from maintkit.distributions import weibull
+    with pytest.raises(ValueError, match="type must be one of"):
+        weibull()(2.0, scale=100.0).plot(type="survival")
+
+
+def test_conditional_reliability_needs_t0():
+    from maintkit.distributions import weibull
+    with pytest.raises(ValueError, match="t0 must be specified"):
+        weibull()(2.0, scale=100.0).plot(type="conditional_reliability")

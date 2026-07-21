@@ -114,7 +114,10 @@ class reliability_distribution(stats.rv_continuous):
          return _parameter_transform_identity(x,likelihood_hessian=likelihood_hessian,\
             direction=direction)
 
-class reliability_distribution_frozen(stats._distn_infrastructure.rv_frozen):
+# rv_continuous_frozen, not rv_frozen: scipy splits the two, and rv_frozen
+# carries cdf, sf and ppf but not pdf or logpdf. Inheriting from it gives a
+# "distribution" with no density.
+class reliability_distribution_frozen(stats._distn_infrastructure.rv_continuous_frozen):
     def __init__(self, dist, *args, **kwds):
         self.args = args
         self.kwds = kwds
@@ -159,17 +162,22 @@ class reliability_distribution_frozen(stats._distn_infrastructure.rv_frozen):
         figkwds = {} if figkwds is None else figkwds
         pltkwds = {} if pltkwds is None else pltkwds
 
+        # Bound methods are looked up lazily, by name, so asking for one curve
+        # does not require every other one to exist. Storing self.pdf directly
+        # here would evaluate all five on every call.
         curves = {
-            'pdf':         (self.pdf, "f(t)"),
-            'cdf':         (self.cdf, "F(t)"),
-            'reliability': (self.sf,  "R(t)"),
-            'hazard':      (self.hazard, r"$\lambda(t)$"),
+            'pdf':         ('pdf',         "f(t)"),
+            'cdf':         ('cdf',         "F(t)"),
+            'reliability': ('reliability', "R(t)"),
+            'hazard':      ('hazard',      r"$\lambda(t)$"),
             'conditional_reliability': (
-                lambda x: self.conditional_reliability(x,t0),
-                f"R(t+{t0}|{t0})",
+                'conditional_reliability', f"R(t+{t0}|{t0})",
             ),
         }
-        fun,ylabel = curves[type]
+        name,ylabel = curves[type]
+        method = getattr(self, name)
+        fun = ((lambda x: method(x, t0)) if type == 'conditional_reliability'
+               else method)
 
         t = np.linspace(self.ppf(0.001),self.ppf(0.999),1000)
         if ax is None:
