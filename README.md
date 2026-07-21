@@ -27,8 +27,9 @@ import maintkit as mk
 # Weibull MLE with right-censoring
 ti = np.array([12., 45., 88., 90., 110., 130.])
 observed = np.array([1, 1, 1, 0, 1, 0])          # 0 = right-censored
-p_hat, p_ci, p_cov = mk.Weibull().fit(ti, p0=[80., 1.5], observed=observed)
-eta_hat, beta_hat = p_hat
+res = mk.Weibull().fit(ti, p0=[80., 1.5], observed=observed)
+eta_hat, beta_hat = res.params
+print(res.summary())                              # estimates, std errors, CIs
 
 # Nonparametric CDF estimate (Kaplan-Meier)
 t, F, lb, ub = mk.kaplan_meier(ti, observed, plot=False)
@@ -36,7 +37,8 @@ t, F, lb, ub = mk.kaplan_meier(ti, observed, plot=False)
 # Recurrent events: fit a power-law NHPP across several assets
 model = mk.PowerLawNHPP(a=0.02, b=1.5)
 event_times = [[10., 40., 95.], [22., 60.]]       # one list per asset
-p_hat, p_ci, p_cov = model.fit(event_times, truncation_times=[100., 100.])
+res = model.fit(event_times, truncation_times=[100., 100.])
+a_hat, b_hat = res.params
 ```
 
 ## Package layout
@@ -44,12 +46,14 @@ p_hat, p_ci, p_cov = model.fit(event_times, truncation_times=[100., 100.])
 ```
 src/maintkit/
     distributions.py            # Exponential, Weibull, ReliabilityFromHazard + frozen wrappers
-    PoissonProcess.py          # PoissonProcess, PowerLawNHPP
-    imperfect_maintenance.py    # ProportionalAgeReduction (proportional age reduction)
+    poisson_process.py          # PoissonProcess, PowerLawNHPP
+    imperfect_maintenance.py    # ProportionalAgeReduction
     maintenance_optimization.py # IntervalReplacement
     probability_plotting.py     # ecdf, kaplan_meier, empirical_mean_cumulative_function, Weibull plots
     wiener.py                   # Wiener, RBM (regulated Brownian motion) degradation models
-    utilities.py                # parameter transforms, helpers
+    inference.py                # fit_mle, FitResult -- the shared MLE machinery
+    transforms.py               # Log, Logit, Composite parameter transforms
+    utilities.py                # small shared helpers
 tests/                          # pytest regression + core tests
 examples/                       # Jupyter notebooks
 legacy/matlab/                  # original MATLAB implementation (deprecated)
@@ -85,7 +89,11 @@ in place, so re-run the notebook if you want to keep viewing results locally.
 
 - The public API is re-exported from the package root, so `mk.Weibull`,
   `mk.kaplan_meier`, etc. all work directly.
-- The previous `weiner` (misspelled) class is kept as an alias of `Wiener`
-  for backward compatibility.
+- Every fitter returns a `FitResult`, with `.params`, `.se`, `.ci`, `.cov`
+  and a `.summary()` table. Confidence levels are set with `alpha`, where
+  `alpha=0.05` gives a 95% interval.
+- Module names are snake_case and class names are CapWords, so
+  `maintkit.poisson_process` is always the module and `PoissonProcess` the
+  class in it.
 - The MATLAB code under `legacy/matlab/` is retained for reference only and is
   no longer maintained.
