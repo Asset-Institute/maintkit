@@ -82,11 +82,11 @@ def _wiener_estimate():
 
 
 def _rbm_estimate():
-    from maintkit.wiener import RBM
-    # reflected_path, not wiener_path: RBM cannot produce a negative value, and
+    from maintkit.wiener import RegulatedBrownianMotion
+    # reflected_path, not wiener_path: regulated Brownian motion cannot produce a
     # wiener_path contains several.
     t, x = ds.reflected_path()
-    return RBM(0.5, 1.0).fit(t, x)
+    return RegulatedBrownianMotion(0.5, 1.0).fit(t, x)
 
 
 CASES = {
@@ -99,7 +99,7 @@ CASES = {
     "PowerLawNHPP.fit_interval": _power_law_nhpp_fit_interval,
     "ProportionalAgeReduction.fit": _imperfect_maintenance_fit,
     "Wiener.fit": _wiener_estimate,
-    "RBM.fit": _rbm_estimate,
+    "RegulatedBrownianMotion.fit": _rbm_estimate,
 }
 
 

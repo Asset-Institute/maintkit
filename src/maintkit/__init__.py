@@ -11,7 +11,7 @@ Public API groups:
 * Nonparametric estimators and probability plotting
   (``ecdf``, ``kaplan_meier``, ``empirical_mean_cumulative_function``,
   ``weibull_probability_plot``).
-* Degradation models (``Wiener``, ``RBM``).
+* Degradation models (``Wiener``, ``RegulatedBrownianMotion``).
 """
 
 from maintkit.distributions import (
@@ -31,7 +31,7 @@ from maintkit.probability_plotting import (
     weibull_probability_plot,
     weibull_reliability_confidence_interval,
 )
-from maintkit.wiener import Wiener, RBM
+from maintkit.wiener import Wiener, RegulatedBrownianMotion
 from maintkit.inference import (
     FitResult,
     ConvergenceWarning,
@@ -42,7 +42,7 @@ from maintkit.inference import (
 )
 from maintkit.transforms import Transform, Identity, Log, Logit, Composite
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "ReliabilityDistribution",
@@ -60,7 +60,7 @@ __all__ = [
     "weibull_probability_plot",
     "weibull_reliability_confidence_interval",
     "Wiener",
-    "RBM",
+    "RegulatedBrownianMotion",
     "FitResult",
     "ConvergenceWarning",
     "fit_mle",

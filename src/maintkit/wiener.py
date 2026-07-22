@@ -177,7 +177,7 @@ class Wiener:
         return result
 
 
-class RBM(Wiener):
+class RegulatedBrownianMotion(Wiener):
     """Brownian motion with drift, reflected at zero."""
 
     def __init__(self,mu,sigma):

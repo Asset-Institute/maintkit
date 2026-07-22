@@ -6,7 +6,7 @@
     "scipy": "1.18.0"
   },
   "cases": {
-    "RBM.fit": {
+    "RegulatedBrownianMotion.fit": {
       "n_outputs": 3,
       "outputs": [
         [

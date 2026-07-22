@@ -50,7 +50,7 @@ src/maintkit/
     imperfect_maintenance.py    # ProportionalAgeReduction
     maintenance_optimization.py # IntervalReplacement
     probability_plotting.py     # ecdf, kaplan_meier, empirical_mean_cumulative_function, Weibull plots
-    wiener.py                   # Wiener, RBM (regulated Brownian motion) degradation models
+    wiener.py                   # Wiener, RegulatedBrownianMotion degradation models
     inference.py                # fit_mle, FitResult -- the shared MLE machinery
     transforms.py               # Log, Logit, Composite parameter transforms
     utilities.py                # small shared helpers

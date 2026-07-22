@@ -1,4 +1,4 @@
-"""Wiener and RBM after the migration to the shared MLE code."""
+"""Wiener and regulated Brownian motion, after the move to the shared MLE code."""
 from __future__ import annotations
 
 import numpy as np
@@ -6,7 +6,7 @@ import pytest
 from scipy import stats
 
 from maintkit.inference import FitResult
-from maintkit.wiener import RBM, Wiener
+from maintkit.wiener import RegulatedBrownianMotion, Wiener
 from tests import _datasets as ds
 
 
@@ -20,7 +20,7 @@ def path():
 
 @pytest.fixture(scope="module")
 def reflected():
-    """RBM cannot produce a negative value, and wiener_path contains several."""
+    """Regulated Brownian motion cannot go negative, and wiener_path does."""
     return ds.reflected_path()
 
 
@@ -121,7 +121,7 @@ def test_a_run_with_one_point_has_no_increment(path):
         model.fit([[0.0]], [[0.0]])
 
 
-# ---------------------------------------------------------------- RBM pdf ----
+# --------------------------------------------------------------------- RBM pdf ----
 def _naive_rbm_pdf(x, t, x0, mu, sigma):
     """The formula as it was written before, evaluated directly."""
     m = mu * t + x0
@@ -139,7 +139,7 @@ def _naive_rbm_pdf(x, t, x0, mu, sigma):
 )
 def test_pdf_agrees_with_the_direct_formula(x, t, mu, sigma):
     """Where the direct formula still works, the rewrite must match it."""
-    model = RBM(mu, sigma)
+    model = RegulatedBrownianMotion(mu, sigma)
     got = model.transition_distribution(x, t, 0.0, type="pdf")
     assert got == pytest.approx(_naive_rbm_pdf(x, t, 0.0, mu, sigma), rel=1e-12)
 
@@ -150,7 +150,7 @@ def test_logpdf_stays_finite_where_the_old_form_died(x, t, mu):
     """exp(2*mu*x/sigma**2) overflows, and the density underflowed to exactly
     zero -- at which point log(f + 1e-10) returned about -23 regardless of how
     small the density really was."""
-    lp = RBM(mu, 1.0).transition_distribution(x, t, 0.0, type="logpdf")
+    lp = RegulatedBrownianMotion(mu, 1.0).transition_distribution(x, t, 0.0, type="logpdf")
     assert np.isfinite(lp)
     assert lp < -100          # genuinely tiny, not the -23 floor
 
@@ -159,7 +159,7 @@ def test_zero_drift_is_the_folded_normal():
     """Reflected BM with no drift has density 2*phi(x/s)/s. Also checks that
     the third term, whose coefficient is 2*mu/sigma**2, drops out without
     producing 0 * -inf."""
-    model = RBM(0.0, 1.0)
+    model = RegulatedBrownianMotion(0.0, 1.0)
     x = np.array([0.2, 1.0, 2.5])
     got = model.transition_distribution(x, 1.0, 0.0, type="pdf")
     np.testing.assert_allclose(got, 2 * stats.norm.pdf(x), rtol=1e-12)
@@ -170,7 +170,7 @@ def test_zero_drift_is_the_folded_normal():
                                         (1.0, 1.0, 0.5)])
 def test_density_integrates_to_the_cdf(mu, sigma, t):
     """Ties pdf and cdf together, so neither can drift from the other."""
-    model = RBM(mu, sigma)
+    model = RegulatedBrownianMotion(mu, sigma)
     hi = max(mu * t, 0.0) + 7 * sigma * np.sqrt(t)
     grid = np.linspace(1e-9, hi, 20001)
     integral = np.trapezoid(
@@ -182,7 +182,7 @@ def test_density_integrates_to_the_cdf(mu, sigma, t):
 
 
 def test_pdf_and_logpdf_agree():
-    model = RBM(0.5, 1.0)
+    model = RegulatedBrownianMotion(0.5, 1.0)
     x = np.array([0.1, 1.0, 4.0])
     np.testing.assert_allclose(
         model.transition_distribution(x, 1.0, 0.0, type="logpdf"),
@@ -193,13 +193,13 @@ def test_pdf_and_logpdf_agree():
 
 def test_unknown_type_is_rejected():
     with pytest.raises(ValueError, match="type must be one of"):
-        RBM(0.5, 1.0).transition_distribution(1.0, 1.0, 0.0, type="sf")
+        RegulatedBrownianMotion(0.5, 1.0).transition_distribution(1.0, 1.0, 0.0, type="sf")
 
 
-# ---------------------------------------------------------------- RBM fit ----
+# --------------------------------------------------------------------- RBM fit ----
 def test_rbm_fit_returns_fitresult(reflected):
     t, x = reflected
-    result = RBM(MU, SIGMA).fit(t, x)
+    result = RegulatedBrownianMotion(MU, SIGMA).fit(t, x)
     assert isinstance(result, FitResult)
     assert result.names == ("mu", "sigma")
     assert result.params[1] > 0
@@ -210,7 +210,7 @@ def test_rbm_fit_produces_numbers(reflected):
     only that cov[0, 0] != 1.0, which a NaN satisfies -- so it passed while the
     fit was returning NaN throughout."""
     t, x = reflected
-    result = RBM(MU, SIGMA).fit(t, x)
+    result = RegulatedBrownianMotion(MU, SIGMA).fit(t, x)
     assert np.all(np.isfinite(result.params))
     assert np.all(np.isfinite(result.cov))
     assert np.all(np.isfinite(result.se))
@@ -222,7 +222,7 @@ def test_rbm_covariance_is_not_the_bfgs_placeholder(reflected):
     """The old default used res.hess_inv, which came back as the identity when
     BFGS made no progress -- a 'covariance' of exactly 1.0 for mu."""
     t, x = reflected
-    result = RBM(MU, SIGMA).fit(t, x)
+    result = RegulatedBrownianMotion(MU, SIGMA).fit(t, x)
     assert np.all(np.isfinite(result.cov))
     assert result.cov[0, 0] != 1.0
     np.testing.assert_allclose(result.cov, result.cov.T, rtol=1e-10)
@@ -231,7 +231,7 @@ def test_rbm_covariance_is_not_the_bfgs_placeholder(reflected):
 
 def test_rbm_recovers_the_generating_parameters(reflected):
     t, x = reflected
-    result = RBM(MU, SIGMA).fit(t, x)
+    result = RegulatedBrownianMotion(MU, SIGMA).fit(t, x)
     assert abs(result.params[1] - SIGMA) < 0.3
 
 
@@ -241,18 +241,18 @@ def test_rbm_rejects_data_it_cannot_produce(path):
     t, x = path
     assert min(x[0]) < 0, "fixture no longer goes negative"
     with pytest.raises(ValueError, match="negative observation"):
-        RBM(MU, SIGMA).fit(t, x)
+        RegulatedBrownianMotion(MU, SIGMA).fit(t, x)
 
 
 def test_wiener_still_accepts_negative_data(path):
-    """The support check belongs to RBM alone."""
+    """The support check belongs to the reflected process alone."""
     t, x = path
     assert np.all(np.isfinite(Wiener(MU, SIGMA).fit(t, x).params))
 
 
-# ------------------------------------------------------- RBM quantile band ----
+# --------------------------------------------------------- RBM quantile band ----
 def test_quantile_band_brackets_the_median():
-    model = RBM(0.5, 1.0)
+    model = RegulatedBrownianMotion(0.5, 1.0)
     t = np.array([0.5, 1.0, 2.0])
     L, U = model.get_upper_lower(t, 0.0, alpha=0.025)
     assert np.all(L < U)
@@ -264,7 +264,7 @@ def test_quantile_band_inverts_the_cdf():
 
     alpha is a significance level, so the band is split between the two tails.
     """
-    model = RBM(0.5, 1.0)
+    model = RegulatedBrownianMotion(0.5, 1.0)
     t = np.array([0.5, 1.0, 2.0])
     alpha = 0.05
     L, U = model.get_upper_lower(t, 0.0, alpha=alpha)
@@ -282,7 +282,7 @@ def test_quantile_band_over_the_notebook_grid(mu, sigma):
     is 3.8e-08 of the 2.5% target -- flat enough that a local method reports no
     progress. The root is at 0.249, nowhere near the boundary.
     """
-    model = RBM(mu, sigma)
+    model = RegulatedBrownianMotion(mu, sigma)
     t = np.arange(0.1, 10.0, 0.1)
     L, U = model.get_upper_lower(t, 0.0)
     assert np.all(np.isfinite(L)) and np.all(np.isfinite(U))
@@ -291,7 +291,7 @@ def test_quantile_band_over_the_notebook_grid(mu, sigma):
 
 
 def test_quantile_band_is_accurate_where_fsolve_stalled():
-    model = RBM(1.0, 2.0)
+    model = RegulatedBrownianMotion(1.0, 2.0)
     L, U = model.get_upper_lower(np.array([2.1]), 0.0, alpha=0.05)
     assert L[0] == pytest.approx(0.2489571025, abs=1e-8)
     assert model.transition_distribution(L[0], 2.1, 0.0, type="cdf") == pytest.approx(0.025, abs=1e-12)
@@ -299,12 +299,12 @@ def test_quantile_band_is_accurate_where_fsolve_stalled():
 
 def test_quantile_band_handles_a_tiny_time():
     """s = sigma*sqrt(t) collapses, so the bracket has to shrink with it."""
-    L, U = RBM(1.0, 2.0).get_upper_lower(np.array([1e-6]), 0.0)
+    L, U = RegulatedBrownianMotion(1.0, 2.0).get_upper_lower(np.array([1e-6]), 0.0)
     assert 0 <= L[0] < U[0]
 
 
 def test_quantile_band_is_monotone_in_alpha():
-    model = RBM(1.0, 2.0)
+    model = RegulatedBrownianMotion(1.0, 2.0)
     t = np.array([1.0, 5.0])
     narrow_L, narrow_U = model.get_upper_lower(t, 0.0, alpha=0.20)
     wide_L, wide_U = model.get_upper_lower(t, 0.0, alpha=0.01)
@@ -315,6 +315,6 @@ def test_quantile_band_is_monotone_in_alpha():
 def test_quantile_band_returns_scalars_not_arrays():
     """fsolve returns a length-1 array; assigning it into a slot is an error
     under numpy 2."""
-    L, U = RBM(0.5, 1.0).get_upper_lower(np.array([1.0]), 0.0)
+    L, U = RegulatedBrownianMotion(0.5, 1.0).get_upper_lower(np.array([1.0]), 0.0)
     assert L.shape == (1,) and U.shape == (1,)
     assert np.isscalar(L[0]) or L[0].ndim == 0

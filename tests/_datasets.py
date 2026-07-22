@@ -179,10 +179,10 @@ def wiener_path(n_steps=400, horizon=50.0, mu=0.5, sigma=1.0, seed=707):
 def reflected_path(n_steps=400, horizon=50.0, mu=0.5, sigma=1.0, seed=717):
     """Single reflected Brownian path. Returns (t, x) as lists-of-lists.
 
-    ``wiener_path`` goes negative, which RBM cannot produce: the process is
-    confined to ``[0, inf)``, so a negative observation has zero density and
-    the log-likelihood is ``-inf`` there. Fitting RBM to that data is not a
-    hard case, it is an impossible one.
+    ``wiener_path`` goes negative, which regulated Brownian motion cannot
+    produce: it is confined to ``[0, inf)``, so a negative observation has zero
+    density and the log-likelihood is ``-inf`` there. Fitting the model to that
+    data is not a hard case, it is an impossible one.
 
     Built with the Lindley recursion
     ``X[k+1] = max(0, X[k] + mu*dt + sigma*sqrt(dt)*Z)``, the standard discrete
