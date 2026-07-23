@@ -79,12 +79,11 @@ def test_wiener_covariance_is_symmetric():
     "kind", ["pdf", "cdf", "reliability", "hazard", "conditional_reliability"]
 )
 def test_every_plot_type_works(kind):
-    """Two bugs met here.
+    """The dispatch bug this guards against.
 
-    The frozen class inherited from ``rv_frozen``, which has no ``pdf`` -- the
-    density lives on ``rv_continuous_frozen``. And ``plot`` built its dispatch
-    table out of bound methods, so asking for any curve looked up all five and
-    hit the missing one regardless of what was requested.
+    ``plot`` once built its lookup table out of bound methods, so asking for
+    any curve evaluated all five and hit whichever was unavailable, regardless
+    of what was requested. The table now holds names, resolved on demand.
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -118,10 +117,8 @@ def test_conditional_reliability_needs_t0():
 
 # -------------------------------------------- frozen distribution support ----
 def test_frozen_distribution_has_a_support():
-    """__init__ never set self.a / self.b, so anything reading them raised
-    AttributeError. It cannot call super().__init__() to get them: scipy
-    rebuilds the distribution from its constructor parameters, which drops
-    whatever a subclass needs beyond them."""
+    """support() is delegated to the unfrozen distribution, which carries the
+    bounds. The frozen wrapper holds no a/b of its own."""
     from maintkit.distributions import Weibull
     dist = Weibull()(2.0, scale=100.0)
     lo, hi = dist.support()
@@ -145,12 +142,9 @@ def test_freezing_keeps_the_instance_it_was_given():
 
 
 def test_reliability_from_hazard_can_be_frozen():
-    """The case that makes scipy's rebuild impossible: its constructor takes a
-    hazard function, which is not an rv_continuous constructor parameter, so
-    dist.__class__(**dist._updated_ctor_param()) would raise TypeError.
-
-    Evaluating one of these is covered in test_reliability_from_hazard.
-    """
+    """ReliabilityFromHazard takes a hazard function in its constructor, which
+    is not an rv_continuous parameter. The wrapper holds the instance and
+    delegates, so this freezes and evaluates without a rebuild."""
     from maintkit.distributions import ReliabilityFromHazard
     dist = ReliabilityFromHazard(lambda t: 0.02)
     frozen = dist()
@@ -158,3 +152,37 @@ def test_reliability_from_hazard_can_be_frozen():
     lo, hi = frozen.support()
     assert lo == 0
     assert np.isinf(hi)
+
+
+def test_frozen_is_not_a_scipy_frozen_instance():
+    """The whole point of the composition change: no dependency on the private
+    scipy frozen classes. The object forwards to them but is not one."""
+    from scipy.stats._distn_infrastructure import rv_frozen
+
+    from maintkit.distributions import ReliabilityDistributionFrozen, Weibull
+    frozen = Weibull()(2.0, scale=100.0)
+    assert isinstance(frozen, ReliabilityDistributionFrozen)
+    assert not isinstance(frozen, rv_frozen)
+
+
+def test_frozen_delegates_the_standard_distribution_methods():
+    """Everything scipy's frozen object answered must still be answered, now by
+    forwarding to the unfrozen distribution with the parameters bound."""
+    from maintkit.distributions import Weibull
+    frozen = Weibull()(2.0, scale=100.0)
+    unfrozen = Weibull()
+    for name in ["pdf", "cdf", "sf", "logsf", "ppf"]:
+        got = getattr(frozen, name)(0.5 if name in ("ppf",) else 50.0)
+        want = getattr(unfrozen, name)(0.5 if name in ("ppf",) else 50.0,
+                                       2.0, scale=100.0)
+        assert got == pytest.approx(want)
+    assert frozen.mean() == pytest.approx(Weibull().mean(2.0, scale=100.0))
+
+
+def test_frozen_rejects_an_unknown_attribute():
+    """__getattr__ forwards only the allowlist; anything else is a real
+    AttributeError, not a silent forward that fails obscurely later."""
+    from maintkit.distributions import Weibull
+    frozen = Weibull()(2.0, scale=100.0)
+    with pytest.raises(AttributeError):
+        frozen.definitely_not_a_method

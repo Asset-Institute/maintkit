@@ -106,28 +106,48 @@ class ReliabilityDistribution(stats.rv_continuous):
 
 
     def freeze(self, *args, **kwds):
-        return ReliabilityDistributionFrozen(self, *args, **kwds) # freeze using new reliabilty class, otherwise new functions won't be defined (e.g. reliability)
+        # Define freeze so that scipy's definition of __call__ yields a frozen distribution 
+        # with the reliability-specific methods defined here. The frozen distribution is not 
+        # a subclass of anything in scipy.
+        return ReliabilityDistributionFrozen(self, *args, **kwds)
     
 
-# rv_continuous_frozen, not rv_frozen: scipy splits the two, and rv_frozen
-# carries cdf, sf and ppf but not pdf or logpdf. Inheriting from it gives a
-# "distribution" with no density.
-class ReliabilityDistributionFrozen(stats._distn_infrastructure.rv_continuous_frozen):
+class ReliabilityDistributionFrozen:
+    """A distribution with its parameters fixed, by composition.
+
+    Holds the unfrozen distribution and the bound parameters, and forwards the
+    standard distribution calls to it with those parameters applied. The
+    reliability-specific methods -- ``reliability``, ``hazard`` and the rest --
+    are defined here on top.
+
+    It is not a subclass of anything in ``scipy``.
+    """
+
+    #: Standard distribution methods forwarded to the unfrozen distribution.
+    #: Each takes the fixed parameters as trailing arguments, exactly as the
+    #: unfrozen call would: ``frozen.cdf(x)`` is ``dist.cdf(x, *args, **kwds)``.
+    _DELEGATED = frozenset({
+        "pdf", "logpdf", "cdf", "logcdf", "sf", "logsf", "ppf", "isf",
+        "rvs", "mean", "var", "std", "median", "moment", "entropy",
+        "interval", "support", "stats", "expect",
+    })
+
     def __init__(self, dist, *args, **kwds):
-        # Deliberately not super().__init__(). scipy's version rebuilds the
-        # distribution with dist.__class__(**dist._updated_ctor_param()), which
-        # passes only the rv_continuous constructor parameters. Any subclass
-        # needing more than those would fail: ReliabilityFromHazard takes a
-        # hazard function, so the rebuild raises TypeError.
-        #
-        # Keeping the instance we were given means setting the support fields
-        # ourselves. Without them self.a and self.b are missing and anything
-        # relying on them -- support(), interval() -- fails with AttributeError.
+        self.dist = dist
         self.args = args
         self.kwds = kwds
-        self.dist = dist
-        shapes, _, _ = dist._parse_args(*args, **kwds)
-        self.a, self.b = dist._get_support(*shapes)
+
+    def __getattr__(self, name):
+        # Only reached for names not found normally, so the methods defined on
+        # the class take precedence. Names starting with "_" are rejected up
+        # front so a missing dunder (pickling, copy) does not recurse through
+        # self.dist before __init__ has run.
+        if name.startswith("_") or name not in self._DELEGATED:
+            raise AttributeError(
+                f"{type(self).__name__!r} object has no attribute {name!r}"
+            )
+        method = getattr(self.dist, name)
+        return lambda *a, **k: method(*a, *self.args, **{**self.kwds, **k})
 
     def reliability(self,x):
         return self.dist.sf(x,*self.args, **self.kwds)
@@ -137,7 +157,7 @@ class ReliabilityDistributionFrozen(stats._distn_infrastructure.rv_continuous_fr
         return self.dist.hazard(x,*self.args, **self.kwds)
     def conditional_reliability(self,tau,t0):
         return np.exp(self.dist.log_reliability(t0+tau,*self.args, **self.kwds) - self.dist.log_reliability(t0,*self.args, **self.kwds))
-    
+
     def plot(self,type:str='pdf',figkwds=None,pltkwds=None,ax=None,t0=None):
         """
         Plot one characteristic of the frozen distribution.
