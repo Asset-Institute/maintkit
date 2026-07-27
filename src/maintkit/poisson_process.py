@@ -86,12 +86,43 @@ class PoissonProcess:
     def log_intensity(self,t):
         return np.log(self.intensity(t))
 
-    def reliability(self,t,w):
-        return np.exp(-self.cumulative_intensity(w,t0=t))
-    
+    def reliability(self,w,t0=0):
+        r"""Probability of no event in :math:`(t_0,\,t_0+w]`.
+
+        .. math::
+            R(w \mid t_0) = \exp\{-[\Lambda(t_0+w) - \Lambda(t_0)]\}
+
+        Which is the probability of survival for the next w time units from
+        the calendar age :math:`t_0`.
+
+        Parameters
+        ----------
+        w : array_like
+            Length of the window, measured forward from ``t0``.
+        t0 : array_like, optional
+            Start of the window; scalar, or the same length as ``w``. Defaults
+            to 0, giving the unconditional survival of the first event.
+
+        Returns
+        -------
+        float or ndarray
+            Shaped like ``t0 + w``, so scalar arguments give back a scalar.
+        """
+        w = np.asarray(w,dtype=float)
+        t0 = np.asarray(t0,dtype=float)
+        if np.any(w < 0):
+            raise ValueError("w must be non-negative")
+        end = t0 + w
+        LAMBDA = np.asarray(
+            self.cumulative_intensity(end,t0=t0),dtype=float
+        ).reshape(end.shape)
+        R = np.exp(-LAMBDA)
+        return R.item() if R.ndim == 0 else R # convert to float if scalar
+
     def pdf(self,t,t_previous=0):
-        w = t-t_previous
-        return self.intensity(t)*self.reliability(w,t0=t_previous)
+        """Density of the next event time ``t``, given the process is at
+        ``t_previous`` with no event since."""
+        return self.intensity(t)*self.reliability(t-t_previous,t0=t_previous)
     
     def nnlf(self,p,event_times,truncation_times=None):
         # event_times[asset][failure time index], truncation_time=None means that last index is a failure.
