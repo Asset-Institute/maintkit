@@ -498,3 +498,53 @@ class Weibull(ReliabilityDistribution):
             x = np.log(1.0/ti)
             return stats.anderson(x,dist='gumbel_r')
 
+class Gamma(ReliabilityDistribution):
+    
+    # eta (scale) and beta (shape) are both strictly positive, so fit on the
+    # log scale.
+    parameter_transform = Log()
+    parameter_names = ("eta", "beta")
+
+    def _pdf(self,x,beta,eta):
+        return stats.distributions.gamma.pdf(x, beta, scale=eta)
+   
+    def _cdf(self,x,beta,eta):
+        return stats.distributions.gamma.cdf(x, beta, scale=eta)
+    
+    def _sf(self,x,beta,eta):
+        return stats.distributions.gamma.sf(x, beta, scale=eta)
+   
+    def _logsf(self,x,beta,eta):
+        return stats.distributions.gamma.logsf(x, beta, scale=eta)
+   
+    def _logpdf(self,x,beta,eta):
+        return stats.distributions.gamma.logpdf(x, beta, scale=eta)
+   
+    def nnlf(self,p,xi,observed="all"):
+        # loc = 0
+        eta = p[0]
+        beta = p[1]
+
+        # handle case where all are observed
+        if isinstance(observed,str) and observed == "all":
+            observed = np.ones(xi.shape)
+        
+        loglike = sum(self.logpdf(xi[observed==1], beta, eta)) + \
+            sum(self.log_reliability(xi[observed==0], beta, eta)) # deals with right censoring
+        
+        return -loglike
+    
+    def nnlf_interval(self,p,ui,li,observed="all"):  #ui, li: upper, lower bounds
+        # loc = 0
+        eta = p[0]
+        beta = p[1]
+
+        # handle case where all are observed
+        if isinstance(observed,str) and observed == "all":
+            observed = np.ones(ui.shape)
+        
+        idxo, = np.where(observed==1)
+        loglike = sum( np.log(self.cdf(ui[idxo],beta,eta)-self.cdf(li[idxo],beta,eta)) ) +\
+            sum(self.log_reliability(ui[observed==0],beta,eta)) # deals with right censoring
+        
+        return -loglike
