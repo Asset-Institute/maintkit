@@ -1,6 +1,7 @@
 # note that all packages must have licenses that permit commercial use!
 from scipy import stats as stats
 from scipy import optimize as opt
+from scipy import special as special
 from scipy.integrate import quad
 import numpy as np
 import matplotlib.pyplot as plt
@@ -533,7 +534,46 @@ class Gamma(ReliabilityDistribution):
             sum(self.log_reliability(xi[observed==0], beta, eta)) # deals with right censoring
         
         return -loglike
-    
+
+    def nnlf_gradient(self,p,xi,observed="all"):
+        r"""Analytic score of the right-censored negative log-likelihood.
+
+        For an observed failure, :math:`\partial\ell/\partial\eta =
+        t/\eta^{2} - \beta/\eta` and :math:`\partial\ell/\partial\beta =
+        \log t - \log\eta - \psi(\beta)`. For a censored one the scale
+        derivative is :math:`(t/\eta)\,h(t)`, but the shape derivative
+        involves the incomplete gamma differentiated with respect to its
+        parameter, which has no elementary form and is taken by central
+        difference on ``logsf``.
+
+        Without this ``fit`` falls back to finite differences and BFGS stops
+        on precision loss. Returns the gradient of the *negative*
+        log-likelihood, ordered ``(eta, beta)`` to match :meth:`nnlf`.
+        """
+        eta, beta = float(p[0]), float(p[1])
+        xi = np.asarray(xi,dtype=float)
+
+        if isinstance(observed,str) and observed == "all":
+            observed = np.ones(xi.shape)
+        observed = np.asarray(observed,dtype=float)
+        failed, censored = xi[observed==1], xi[observed==0]
+
+        dl_deta = np.sum(failed)/eta**2 - failed.size*beta/eta
+        dl_dbeta = (np.sum(np.log(failed)) - failed.size*np.log(eta)
+                    - failed.size*special.digamma(beta))
+
+        if censored.size:
+            hazard = np.exp(self.logpdf(censored,beta,eta)
+                            - self.log_reliability(censored,beta,eta))
+            dl_deta += np.sum(censored/eta*hazard)
+            h = 1e-6*max(1.0,beta)
+            dl_dbeta += np.sum(
+                (self.log_reliability(censored,beta+h,eta)
+                 - self.log_reliability(censored,beta-h,eta))/(2*h)
+            )
+
+        return -np.array([dl_deta, dl_dbeta])   # nnlf = -loglikelihood
+
     def nnlf_interval(self,p,ui,li,observed="all"):  #ui, li: upper, lower bounds
         # loc = 0
         eta = p[0]
