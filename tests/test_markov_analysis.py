@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from maintkit.markov_chain import MarkovChain
-from maintkit.schedule import Schedule
+from maintkit.time_indexed import TimeIndexed
 
 
 def two_state(a=0.1, b=0.4):
@@ -281,11 +281,11 @@ def test_mean_first_passage_needs_irreducible():
     ("expected_hitting_times", (1,)), ("mean_first_passage_times", ()),
 ])
 def test_analysis_refuses_time_varying_chain(method, args):
-    chain = MarkovChain(Schedule.periodic([two_state(), two_state(0.2, 0.3)]))
+    chain = MarkovChain(TimeIndexed.periodic([two_state(), two_state(0.2, 0.3)]))
     with pytest.raises(ValueError, match="constant chain only"):
         getattr(chain, method)(*args)
 
 
-def test_periodic_schedule_of_one_matrix_counts_as_constant():
-    chain = MarkovChain(Schedule.periodic([two_state()]))
+def test_periodic_sequence_of_one_matrix_counts_as_constant():
+    chain = MarkovChain(TimeIndexed.periodic([two_state()]))
     np.testing.assert_allclose(chain.stationary_distribution(), [0.8, 0.2])

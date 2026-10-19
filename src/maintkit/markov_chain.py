@@ -7,7 +7,7 @@ Conventions
 * The step from ``t`` to ``t + 1`` uses ``P_t``. A horizon of ``N`` means ``N``
   transitions and states ``X_t0, ..., X_{t0+N}``.
 * The transitions may be constant, periodic or finite (see
-  :class:`maintkit.schedule.Schedule`). A plain ``(S, S)`` array is a constant
+  :class:`maintkit.time_indexed.TimeIndexed`). A plain ``(S, S)`` array is a constant
   chain; a stack of matrices has to be wrapped to say whether it repeats.
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.sparse.csgraph import breadth_first_order, connected_components
 
-from maintkit.schedule import Schedule, as_schedule, check_horizon
+from maintkit.time_indexed import TimeIndexed, as_time_indexed, check_horizon
 
 __all__ = ["MarkovChain", "AbsorptionResult"]
 
@@ -124,9 +124,9 @@ class MarkovChain:
 
     Parameters
     ----------
-    transitions : array_like (S, S) or Schedule
+    transitions : array_like (S, S) or TimeIndexed
         A single transition matrix (a constant chain) or a
-        :class:`~maintkit.schedule.Schedule` of them (periodic or finite).
+        :class:`~maintkit.time_indexed.TimeIndexed` of them (periodic or finite).
     states : sequence, optional
         Labels for the states, in matrix order. Defaults to ``0, ..., S-1``.
         Methods accept a label wherever they take a single state; results are
@@ -144,9 +144,9 @@ class MarkovChain:
     """
 
     def __init__(self, transitions, states=None, atol=1e-10):
-        schedule = as_schedule(transitions, 2, name="transitions")
-        steps = _validate_stochastic(schedule.steps, atol)
-        self.transitions = Schedule(steps, repeat=schedule.repeat)
+        seq = as_time_indexed(transitions, 2, name="transitions")
+        steps = _validate_stochastic(seq.steps, atol)
+        self.transitions = TimeIndexed(steps, repeat=seq.repeat)
         self.atol = float(atol)
 
         n = steps.shape[1]
@@ -168,7 +168,7 @@ class MarkovChain:
 
     @property
     def period(self):
-        """Period of the transition schedule (1 if constant), None if finite."""
+        """Period of the transitions (1 if constant), None if finite."""
         return self.transitions.period
 
     @property
@@ -224,7 +224,7 @@ class MarkovChain:
         horizon : int
             Number of transitions.
         t0 : int
-            Start time, which selects where in the schedule the chain starts.
+            Start time, which selects where in a time-varying chain it starts.
 
         Returns
         -------
@@ -526,7 +526,7 @@ class MarkovChain:
     def _check_finite_horizon(self, horizon, t0):
         if horizon is None:
             raise ValueError("a finite horizon (number of steps) is required here")
-        return check_horizon(self.transitions, horizon, t0, name="the transition schedule")
+        return check_horizon(self.transitions, horizon, t0, name="the transitions")
 
     def __repr__(self):
         return f"MarkovChain(n_states={self.n_states}, transitions={self.transitions!r})"

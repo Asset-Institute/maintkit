@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from maintkit.mdp import MDP
-from maintkit.schedule import Schedule
+from maintkit.time_indexed import TimeIndexed
 
 
 def random_mdp_arrays(S, A, seed, zero_frac=0.3):
@@ -46,7 +46,7 @@ def brute_force(mdp, horizon, discount, terminal, t0=0):
     for flat in itertools.product(range(A), repeat=S * horizon):
         rules = np.array(flat).reshape(horizon, S)
         try:
-            v = mdp.evaluate(Schedule.finite(rules), horizon, discount, terminal, t0)
+            v = mdp.evaluate(TimeIndexed.finite(rules), horizon, discount, terminal, t0)
         except ValueError:                              # inadmissible somewhere
             continue
         best = np.minimum(best, v[0])
@@ -66,8 +66,8 @@ def test_basic_properties():
 def test_joint_period_and_length():
     P, C = random_mdp_arrays(3, 2, 0)
     P2, C2 = random_mdp_arrays(3, 2, 1)
-    assert MDP(Schedule.periodic([P, P2]), Schedule.periodic([C, C2, C])).period == 6
-    assert MDP(Schedule.periodic([P, P2]), Schedule.finite([C] * 5)).length == 5
+    assert MDP(TimeIndexed.periodic([P, P2]), TimeIndexed.periodic([C, C2, C])).period == 6
+    assert MDP(TimeIndexed.periodic([P, P2]), TimeIndexed.finite([C] * 5)).length == 5
 
 
 def test_unwrapped_stack_refused():
@@ -81,7 +81,7 @@ def test_bad_row_names_action_state_and_step():
     bad = P.copy()
     bad[1, 2, 0] += 0.2
     with pytest.raises(ValueError, match="action 1, state 2 at step 1"):
-        MDP(Schedule.periodic([P, bad]), C)
+        MDP(TimeIndexed.periodic([P, bad]), C)
 
 
 def test_shape_mismatches():
@@ -146,7 +146,7 @@ def test_solve_matches_brute_force_constant(seed, discount):
 def test_solve_matches_brute_force_periodic(t0):
     P0, C0 = random_mdp_arrays(3, 2, 10)
     P1, C1 = random_mdp_arrays(3, 2, 11)
-    mdp = MDP(Schedule.periodic([P0, P1]), Schedule.periodic([C0, C1, C0 + 1]))
+    mdp = MDP(TimeIndexed.periodic([P0, P1]), TimeIndexed.periodic([C0, C1, C0 + 1]))
     sol = mdp.solve(3, 0.95, t0=t0)
     np.testing.assert_allclose(sol.values[0], brute_force(mdp, 3, 0.95, None, t0))
 
@@ -160,7 +160,7 @@ def test_solve_with_admissibility_matches_brute_force():
 
 def test_evaluating_optimal_policy_reproduces_values():
     P, C = random_mdp_arrays(4, 3, 5)
-    mdp = MDP(Schedule.periodic([P, P[::-1]]), C)
+    mdp = MDP(TimeIndexed.periodic([P, P[::-1]]), C)
     sol = mdp.solve(6, 0.9, np.arange(4.0), t0=1)
     np.testing.assert_allclose(mdp.evaluate(sol.policy, 6, 0.9, np.arange(4.0), t0=1), sol.values)
 
@@ -202,7 +202,7 @@ def test_ties_go_to_lowest_action():
 
 def test_solve_horizon_checks():
     P, C = random_mdp_arrays(3, 2, 0)
-    mdp = MDP(Schedule.finite([P, P, P]), C)
+    mdp = MDP(TimeIndexed.finite([P, P, P]), C)
     assert mdp.solve(2, t0=1).horizon == 2
     with pytest.raises(ValueError, match="transitions"):
         mdp.solve(3, t0=1)
@@ -212,7 +212,7 @@ def test_solve_horizon_checks():
         MDP(P, C).solve(2, discount=1.5)
 
 
-def test_solution_policy_is_finite_schedule():
+def test_solution_policy_is_finite_time_indexed():
     sol = maintenance_mdp().solve(4)
     assert sol.policy.length == 4 and sol.policy.shape == (4,)
     assert sol.policy.dtype.kind == "i"
@@ -248,7 +248,7 @@ def test_evaluate_rejects_bad_policies():
     with pytest.raises(TypeError, match="integer"):
         mdp.evaluate(np.zeros(4), 2)
     with pytest.raises(ValueError, match="only defined"):
-        mdp.evaluate(Schedule.finite([np.zeros(4, dtype=int)] * 2), 3)
+        mdp.evaluate(TimeIndexed.finite([np.zeros(4, dtype=int)] * 2), 3)
 
 
 def test_policy_costs():
@@ -271,8 +271,8 @@ def test_induced_chain_rows_come_from_chosen_actions():
 def test_induced_chain_period_combines():
     P0, C = random_mdp_arrays(3, 2, 1)
     P1, _ = random_mdp_arrays(3, 2, 2)
-    mdp = MDP(Schedule.periodic([P0, P1]), C)
-    policy = Schedule.periodic([np.array([0, 1, 0]), np.array([1, 1, 0]), np.array([0, 0, 1])])
+    mdp = MDP(TimeIndexed.periodic([P0, P1]), C)
+    policy = TimeIndexed.periodic([np.array([0, 1, 0]), np.array([1, 1, 0]), np.array([0, 0, 1])])
     chain = mdp.induced_chain(policy, t0=1)
     assert chain.period == 6
     np.testing.assert_allclose(chain.transitions[0], P1[[0, 1, 0], [0, 1, 2]])   # model time 1
