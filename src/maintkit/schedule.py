@@ -148,7 +148,7 @@ class Schedule:
     def window(self, t0, n):
         """Values for time steps ``t0, ..., t0 + n - 1`` as an ``(n, *shape)`` array.
 
-        Raises if any of those steps is past the end of a finite schedule.
+        Raises an error if any of those steps is past the end of a finite schedule.
         """
         t0 = _check_time(t0, "t0")
         n = _check_time(n, "n")
@@ -193,15 +193,7 @@ class Schedule:
         if not schedules:
             raise TypeError("combine needs at least one schedule")
         schedules = [s if isinstance(s, Schedule) else Schedule.constant(s) for s in schedules]
-
-        finite_lengths = [s.length for s in schedules if not s.repeat]
-        if finite_lengths:
-            n, repeat = min(finite_lengths), False
-        else:
-            n, repeat = 1, True
-            for s in schedules:
-                n = n * s.period // math.gcd(n, s.period)
-
+        n, repeat = _alignment(schedules)
         return Schedule(np.stack([np.asarray(f(*(s[t] for s in schedules))) for t in range(n)]),
                         repeat=repeat)
 
@@ -215,6 +207,21 @@ class Schedule:
         else:
             kind = f"finite, length={self.n_steps}"
         return f"Schedule({kind}, shape={self.shape}, dtype={self.dtype})"
+
+
+def _alignment(schedules):
+    """Steps needed to cover every distinct combination of ``schedules``, and whether it repeats.
+
+    All repeating: the least common multiple of the periods, repeating. Any
+    finite: the shortest finite length, not repeating.
+    """
+    finite_lengths = [s.length for s in schedules if not s.repeat]
+    if finite_lengths:
+        return min(finite_lengths), False
+    n = 1
+    for s in schedules:
+        n = n * s.period // math.gcd(n, s.period)
+    return n, True
 
 
 def _stack(values):
