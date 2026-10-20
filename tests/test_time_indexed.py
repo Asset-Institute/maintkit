@@ -131,41 +131,50 @@ def test_shift_finite_past_end_rejected():
         TimeIndexed.finite(_mats(3)).shift(3)
 
 
-# ---- combine ---------------------------------------------------------------
+# ---- map -------------------------------------------------------------------
 
-def test_combine_periodic_uses_lcm_and_aligns_steps():
+def test_map_periodic_uses_lcm_and_aligns_steps():
     a = TimeIndexed.periodic([np.array(i) for i in range(2)])
     b = TimeIndexed.periodic([np.array(10 * i) for i in range(3)])
-    c = TimeIndexed.combine(lambda x, y: x + y, a, b)
+    def add(x, y):
+        return x + y
+
+    c = TimeIndexed.map(add, a, b)
     assert c.period == 6
     for t in range(12):
         assert c[t] == (t % 2) + 10 * (t % 3)
 
 
-def test_combine_with_finite_takes_shortest_finite_length():
+def test_map_with_finite_takes_shortest_finite_length():
     per = TimeIndexed.periodic([np.array(i) for i in range(2)])
     f5 = TimeIndexed.finite([np.array(i) for i in range(5)])
     f3 = TimeIndexed.finite([np.array(i) for i in range(3)])
-    c = TimeIndexed.combine(lambda x, y, z: x + y + z, per, f5, f3)
+    def add3(x, y, z):
+        return x + y + z
+
+    c = TimeIndexed.map(add3, per, f5, f3)
     assert c.length == 3
     np.testing.assert_array_equal(c.window(0, 3), [0, 3, 4])
 
 
-def test_combine_treats_plain_arrays_as_constant():
+def test_map_treats_plain_arrays_as_constant():
     sch = TimeIndexed.periodic(_mats(2))
-    c = TimeIndexed.combine(lambda x, y: x @ y, sch, np.eye(2))
+    def matmul(x, y):
+        return x @ y
+
+    c = TimeIndexed.map(matmul, sch, np.eye(2))
     assert c.period == 2
     np.testing.assert_array_equal(c[1], sch[1])
 
 
-def test_combine_constants_stays_constant():
-    c = TimeIndexed.combine(np.add, TimeIndexed.constant(1.0), TimeIndexed.constant(2.0))
+def test_map_constants_stays_constant():
+    c = TimeIndexed.map(np.add, TimeIndexed.constant(1.0), TimeIndexed.constant(2.0))
     assert c.is_constant and c[5] == 3.0
 
 
-def test_combine_needs_a_sequence():
+def test_map_needs_a_sequence():
     with pytest.raises(TypeError):
-        TimeIndexed.combine(np.add)
+        TimeIndexed.map(np.add)
 
 
 # ---- as_time_indexed -----------------------------------------------------------

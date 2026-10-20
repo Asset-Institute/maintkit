@@ -135,7 +135,7 @@ class MDP:
             def expected(P, c):
                 with np.errstate(invalid="ignore"):
                     return np.where(P > 0, P * c, 0.0).sum(axis=2).T
-            return TimeIndexed.combine(expected, self.transitions, C)
+            return TimeIndexed.map(expected, self.transitions, C)
         raise ValueError(
             f"costs must be (S, A) expected costs or (A, S, S) per-transition costs, got {ndim} dimensions"
         )
@@ -325,7 +325,7 @@ class MDP:
         Row ``i`` of the chain's transition matrix at its step ``k`` is row
         ``i`` of ``P[t0 + k][policy[k][i]]``. The chain's time 0 is the model's
         time ``t0``. Periods and lengths combine as in
-        :meth:`TimeIndexed.combine`, so a finite policy gives a finite chain.
+        :meth:`TimeIndexed.map`, so a finite policy gives a finite chain.
         """
         policy = self._policy(policy)
         P = self.transitions.shift(t0)
@@ -333,16 +333,17 @@ class MDP:
         self._check_admissible(policy, n, t0)
 
         rows = np.arange(self.n_states)
-        chain_P = TimeIndexed.combine(lambda Pt, d: Pt[d, rows, :], P, policy)
+        select_rows = lambda Pt, d: Pt[d, rows, :]       # row i of the matrix for action d[i]
+        chain_P = TimeIndexed.map(select_rows, P, policy)
         return MarkovChain(chain_P, states=self.states, atol=self.atol)
 
     def policy_costs(self, policy, t0=0):
         """TimeIndexed of ``(S,)`` expected one-step costs under ``policy`` from ``t0``."""
         policy = self._policy(policy)
         rows = np.arange(self.n_states)
-        return TimeIndexed.combine(lambda C, d: C[rows, d], self.costs.shift(t0), policy)
+        select_costs = lambda C, d: C[rows, d]            # C[i, d[i]] for each state i
+        return TimeIndexed.map(select_costs, self.costs.shift(t0), policy)
 
     def __repr__(self):
         return (f"MDP(n_states={self.n_states}, n_actions={self.n_actions}, sense={self.sense!r}, "
                 f"transitions={self.transitions!r})")
-

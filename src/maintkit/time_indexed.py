@@ -181,7 +181,7 @@ class TimeIndexed:
     # ---- composition --------------------------------------------------------
 
     @staticmethod
-    def combine(f, *seqs):
+    def map(f, *seqs):
         """Apply ``f`` step by step: ``out[t] = f(s1[t], s2[t], ...)``.
 
         Arguments that are not TimeIndexed are treated as constants. The result
@@ -191,11 +191,15 @@ class TimeIndexed:
         every input is.
         """
         if not seqs:
-            raise TypeError("combine needs at least one sequence")
+            raise TypeError("map needs at least one sequence")
         seqs = [s if isinstance(s, TimeIndexed) else TimeIndexed.constant(s) for s in seqs]
         n, repeat = _alignment(seqs)
-        return TimeIndexed(np.stack([np.asarray(f(*(s[t] for s in seqs))) for t in range(n)]),
-                        repeat=repeat)
+        steps = []
+        for t in range(n):
+            args = (s[t] for s in seqs)        # the value of each input at step t
+            out = f(*args)                     # f(a[t], b[t], ...)
+            steps.append(np.asarray(out))      # f may return a scalar or a list
+        return TimeIndexed(np.stack(steps), repeat=repeat)
 
     # ---- display ------------------------------------------------------------
 
